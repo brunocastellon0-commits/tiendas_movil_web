@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import MapLoader from '@/components/ui/Maploader' 
 import { RefreshCw, Map as MapIcon, Loader2, Users } from 'lucide-react'
@@ -56,8 +56,6 @@ export default function EmployeesMapPage() {
       setLoading(true)
       setError(null)
       
-      console.log('🔍 Fetching employee locations...')
-      
       // Obtener empleados con ubicación GPS
       const { data, error: fetchError } = await supabase
         .from('employees')
@@ -65,52 +63,35 @@ export default function EmployeesMapPage() {
         .not('location', 'is', null)
         .order('created_at', { ascending: false })
 
-      console.log('📡 Supabase Response:', { data, error: fetchError })
-
       if (fetchError) throw fetchError
 
       if (data) {
-        console.log(`✅ Found ${data.length} employees with location field`)
-        
         // Procesar datos: extraer lat/lon del campo location
         const processedData = data.map(emp => {
-          console.log('🔧 Processing employee:', emp.full_name)
-          console.log('   Raw location:', emp.location)
-          console.log('   Location type:', typeof emp.location)
-          
           let latitude = null
           let longitude = null
           
           if (emp.location) {
             // 1. WKB Hexadecimal (PostGIS Binary Format)
             if (typeof emp.location === 'string' && emp.location.length > 20 && /^[0-9A-F]+$/i.test(emp.location)) {
-              console.log('   📦 Detected WKB hex format')
               const coords = parseWKBHex(emp.location)
               if (coords) {
                 latitude = coords.latitude
                 longitude = coords.longitude
-                console.log('   ✓ Parsed from WKB hex:', { latitude, longitude })
               }
             }
             // 2. GeoJSON Object
             else if (typeof emp.location === 'object' && emp.location.type === 'Point' && Array.isArray(emp.location.coordinates)) {
-              console.log('   📦 Detected GeoJSON format')
               longitude = emp.location.coordinates[0]
               latitude = emp.location.coordinates[1]
-              console.log('   ✓ Extracted from GeoJSON:', { longitude, latitude })
             }
             // 3. WKT String "POINT(lon lat)"
             else if (typeof emp.location === 'string' && emp.location.includes('POINT(')) {
-              console.log('   📦 Detected WKT string format')
               const match = emp.location.match(/POINT\(([^ ]+) ([^ ]+)\)/)
               if (match) {
                 longitude = parseFloat(match[1])
                 latitude = parseFloat(match[2])
-                console.log('   ✓ Parsed from WKT:', { latitude, longitude })
               }
-            }
-            else {
-              console.log('   ⚠️ Unexpected location format')
             }
           }
 
@@ -124,16 +105,9 @@ export default function EmployeesMapPage() {
           }
         }).filter(emp => {
           const isValid = emp.latitude !== null && emp.longitude !== null && !isNaN(emp.latitude) && !isNaN(emp.longitude)
-          if (!isValid) {
-            console.log('   ❌ Filtered out (invalid coordinates):', emp.full_name)
-          } else {
-            console.log('   ✅ Valid location:', emp.full_name, { lat: emp.latitude, lon: emp.longitude })
-          }
           return isValid
         })
 
-        console.log(`🎯 Final processed locations: ${processedData.length}`)
-        console.log('Locations:', processedData)
         setLocations(processedData)
       }
 
@@ -148,8 +122,8 @@ export default function EmployeesMapPage() {
   useEffect(() => {
     fetchLocations()
     
-    // Auto-refresh cada 30 segundos
-    const interval = setInterval(fetchLocations, 30000)
+    // Auto-refresh cada 60 segundos (optimizado para mejor rendimiento)
+    const interval = setInterval(fetchLocations, 60000)
     return () => clearInterval(interval)
   }, [])
 
@@ -171,76 +145,113 @@ export default function EmployeesMapPage() {
     return updatedAt.toLocaleDateString()
   }
 
-  // Filtrar solo empleados con coordenadas válidas para el mapa
-  const validLocations = locations.filter(emp => 
-    emp.latitude !== null && 
-    emp.longitude !== null &&
-    !isNaN(emp.latitude) &&
-    !isNaN(emp.longitude)
+  // Filtrar solo empleados con coordenadas válidas para el mapa (memoizado)
+  const validLocations = useMemo(() => 
+    locations.filter(emp => 
+      emp.latitude !== null && 
+      emp.longitude !== null &&
+      !isNaN(emp.latitude) &&
+      !isNaN(emp.longitude)
+    ),
+    [locations]
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6 space-y-8">
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
       
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Patrón de rombos */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-35" 
+           style={{backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(16, 185, 129, 0.25) 35px, rgba(16, 185, 129, 0.25) 39px), repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(16, 185, 129, 0.25) 35px, rgba(16, 185, 129, 0.25) 39px)`}}></div>
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-25" 
+           style={{backgroundImage: `radial-gradient(circle at 2px 2px, rgba(20, 184, 166, 0.12) 1px, transparent 1px)`, backgroundSize: '48px 48px'}}></div>
+      <div className="fixed inset-0 z-0 bg-gradient-to-b from-white/40 via-transparent to-transparent pointer-events-none"></div>
+      
+      {/* Círculos blur */}
+      <div className="fixed -top-24 -left-24 w-96 h-96 bg-green-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed top-32 left-32 w-64 h-64 bg-emerald-300/20 rounded-full blur-2xl z-0 pointer-events-none"></div>
+      <div className="fixed -top-32 -right-32 w-[500px] h-[500px] bg-teal-200/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-100/20 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed -bottom-40 -left-20 w-[450px] h-[450px] bg-green-300/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed -bottom-20 -right-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      
+      {/* Figuras geométricas */}
+      <div className="fixed top-20 right-1/4 w-20 h-20 border-3 border-emerald-500/40 rounded-xl rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
+      <div className="fixed top-32 right-1/3 w-14 h-14 bg-green-400/15 rounded-lg -rotate-6 z-0 pointer-events-none"></div>
+      <div className="fixed top-40 left-1/4 w-16 h-16 border-3 border-teal-500/35 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-500/10"></div>
+      <div className="fixed top-56 left-1/3 w-12 h-12 bg-emerald-300/20 rotate-45 z-0 pointer-events-none"></div>
+      <div className="fixed top-1/2 left-16 w-24 h-24 border-3 border-green-500/40 rotate-45 z-0 pointer-events-none shadow-lg shadow-green-500/10"></div>
+      <div className="fixed top-1/2 left-32 w-10 h-10 bg-teal-400/20 rounded-lg -rotate-12 z-0 pointer-events-none"></div>
+      <div className="fixed top-1/3 right-20 w-18 h-18 border-3 border-emerald-600/35 rounded-2xl rotate-45 z-0 pointer-events-none shadow-lg shadow-emerald-600/10"></div>
+      <div className="fixed top-2/3 right-32 w-22 h-22 border-3 border-green-400/40 rotate-12 rounded-lg z-0 pointer-events-none"></div>
+      <div className="fixed bottom-1/3 left-20 w-16 h-16 border-3 border-teal-600/40 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-600/10"></div>
+      <div className="fixed bottom-1/4 left-40 w-14 h-14 bg-green-300/20 rounded-xl rotate-45 z-0 pointer-events-none"></div>
+      <div className="fixed bottom-20 right-1/4 w-20 h-20 border-3 border-emerald-500/45 rounded-lg -rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
+      <div className="fixed bottom-32 right-1/3 w-12 h-12 bg-teal-400/25 rotate-6 z-0 pointer-events-none"></div>
+      
+      <div className="relative z-10 space-y-6">
+      
+      {/* HEADER - Diseño vibrante */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-lg border-2 border-green-100">
         <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent flex items-center gap-3">
-            <div className="p-3 bg-green-600 rounded-xl shadow-lg">
-              <MapIcon className="w-6 h-6 text-white" />
+          <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 bg-clip-text text-transparent flex items-center gap-4">
+            <div className="p-4 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl shadow-xl">
+              <MapIcon className="w-7 h-7 text-white" />
             </div>
             Rastreo de Personal
           </h1>
-          <p className="text-gray-600 text-sm mt-2">Monitoreo GPS en tiempo real de tu equipo</p>
+          <p className="text-gray-600 text-sm mt-2 font-medium">Monitoreo GPS en tiempo real de tu equipo</p>
         </div>
         <button 
           onClick={fetchLocations} 
           disabled={loading}
-          className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all shadow-lg ${
+          className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-sm transition-all shadow-xl ${
             loading 
               ? 'bg-gray-400 cursor-not-allowed text-white'
-              : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-green-900/20 hover:shadow-xl'
+              : 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 hover:from-green-600 hover:via-green-700 hover:to-emerald-700 text-white shadow-green-900/30 hover:shadow-2xl hover:scale-105'
           }`}
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
           {loading ? 'Actualizando...' : 'Actualizar Ubicaciones'}
         </button>
       </div>
 
-      {/* KPI Card */}
-      <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl shadow-lg text-white">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-              <Users className="w-6 h-6" />
+      {/* KPI Card - Diseño vibrante */}
+      <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-blue-400 hover:scale-105">
+        <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+        <div className="relative">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
+                <Users className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-blue-50 font-semibold">Personal en Ruta</p>
+                <h3 className="text-4xl font-black text-white">{validLocations.length}</h3>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-blue-100">Personal en Ruta</p>
-              <h3 className="text-3xl font-bold">{validLocations.length}</h3>
-            </div>
+            <span className="text-xs font-bold bg-white text-blue-600 px-4 py-1.5 rounded-full shadow-md">
+              CON GPS ACTIVO
+            </span>
           </div>
-          <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-            CON GPS ACTIVO
-          </span>
         </div>
       </div>
 
-      {/* Error Message */}
+      {/* Error Message - Mejorado */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl flex items-start gap-3">
-          <div className="w-5 h-5 flex-shrink-0">⚠️</div>
+        <div className="bg-red-50 border-2 border-red-300 text-red-700 p-5 rounded-2xl flex items-start gap-3 shadow-lg">
+          <div className="text-2xl flex-shrink-0">⚠️</div>
           <div>
-            <p className="font-semibold">Error al cargar ubicaciones</p>
-            <p className="text-sm mt-0.5">{error}</p>
+            <p className="font-bold text-base">Error al cargar ubicaciones</p>
+            <p className="text-sm mt-1">{error}</p>
           </div>
         </div>
       )}
 
-      {/* Mapa */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900">Mapa de Ubicaciones</h2>
-          <p className="text-sm text-gray-600 mt-0.5">
+      {/* Mapa - Diseño vibrante */}
+      <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-5 border-b-2 border-green-200">
+          <h2 className="text-xl font-black text-gray-900">Mapa de Ubicaciones</h2>
+          <p className="text-sm text-gray-600 mt-1 font-medium">
             {validLocations.length > 0 
               ? `Mostrando ${validLocations.length} empleado${validLocations.length > 1 ? 's' : ''} en ruta`
               : 'Esperando ubicaciones GPS...'
@@ -258,28 +269,28 @@ export default function EmployeesMapPage() {
         </div>
       </div>
 
-      {/* Lista resumen */}
+      {/* Lista resumen - Tarjetas mejoradas */}
       {validLocations.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Personal en Tiempo Real</h2>
+        <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 p-8">
+          <h2 className="text-2xl font-black text-gray-900 mb-6">Personal en Tiempo Real</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {validLocations.map(emp => (
               <div 
                 key={emp.id} 
-                className="bg-gradient-to-br from-gray-50 to-slate-50 p-4 rounded-xl border-2 border-gray-200 flex items-center gap-3 hover:shadow-md hover:border-green-300 transition-all cursor-pointer"
+                className="bg-gradient-to-br from-green-50 to-emerald-50 p-5 rounded-2xl border-2 border-green-200 flex items-center gap-4 hover:shadow-xl hover:border-green-400 hover:scale-105 transition-all duration-300 cursor-pointer shadow-md"
               >
                 <div className="relative">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 overflow-hidden border-2 border-white shadow-sm">
-                    <div className="w-full h-full flex items-center justify-center text-blue-700 font-bold text-lg">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-400 to-indigo-500 overflow-hidden border-2 border-white shadow-lg">
+                    <div className="w-full h-full flex items-center justify-center text-white font-black text-xl">
                       {emp.full_name.charAt(0)}
                     </div>
                   </div>
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-pulse"></div>
                 </div>
                 <div className="flex-1">
-                   <h4 className="font-bold text-gray-900 text-sm">{emp.full_name}</h4>
-                   <p className="text-xs text-gray-500">{emp.job_title}</p>
-                   <p className="text-xs text-green-600 font-medium mt-0.5">
+                   <h4 className="font-black text-gray-900 text-sm">{emp.full_name}</h4>
+                   <p className="text-xs text-gray-600 font-medium">{emp.job_title}</p>
+                   <p className="text-xs text-green-600 font-black mt-1">
                      {getRelativeTime(emp.created_at)}
                    </p>
                 </div>
@@ -289,6 +300,7 @@ export default function EmployeesMapPage() {
         </div>
       )}
 
+      </div>
     </div>
   )
 }

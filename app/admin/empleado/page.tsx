@@ -245,74 +245,160 @@ export default function EmployeesManagement() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6 space-y-8">
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
       
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Patrón de rombos/diamantes armónico - MÁS VISIBLE */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-35" 
+           style={{
+             backgroundImage: `
+               repeating-linear-gradient(
+                 45deg, 
+                 transparent, 
+                 transparent 35px, 
+                 rgba(16, 185, 129, 0.25) 35px, 
+                 rgba(16, 185, 129, 0.25) 39px
+               ),
+               repeating-linear-gradient(
+                 -45deg, 
+                 transparent, 
+                 transparent 35px, 
+                 rgba(16, 185, 129, 0.25) 35px, 
+                 rgba(16, 185, 129, 0.25) 39px
+               )
+             `,
+           }}>
+      </div>
+      
+      {/* Patrón de puntos sutiles complementario */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-25" 
+           style={{
+             backgroundImage: `radial-gradient(circle at 2px 2px, rgba(20, 184, 166, 0.12) 1px, transparent 1px)`,
+             backgroundSize: '48px 48px'
+           }}>
+      </div>
+      
+      {/* Degradado superior suave */}
+      <div className="fixed inset-0 z-0 bg-gradient-to-b from-white/40 via-transparent to-transparent pointer-events-none"></div>
+      
+      {/* Círculos suaves con blur - Esquina superior izquierda */}
+      <div className="fixed -top-24 -left-24 w-96 h-96 bg-green-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed top-32 left-32 w-64 h-64 bg-emerald-300/20 rounded-full blur-2xl z-0 pointer-events-none"></div>
+      
+      {/* Círculos suaves - Esquina superior derecha */}
+      <div className="fixed -top-32 -right-32 w-[500px] h-[500px] bg-teal-200/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      
+      {/* Círculo central flotante */}
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-100/20 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      
+      {/* Círculos suaves - Esquina inferior */}
+      <div className="fixed -bottom-40 -left-20 w-[450px] h-[450px] bg-green-300/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed -bottom-20 -right-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      
+      {/* Figuras geométricas decorativas - MÁS VISIBLES */}
+      {/* Superior derecha */}
+      <div className="fixed top-20 right-1/4 w-20 h-20 border-3 border-emerald-500/40 rounded-xl rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
+      <div className="fixed top-32 right-1/3 w-14 h-14 bg-green-400/15 rounded-lg -rotate-6 z-0 pointer-events-none"></div>
+      
+      {/* Superior izquierda */}
+      <div className="fixed top-40 left-1/4 w-16 h-16 border-3 border-teal-500/35 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-500/10"></div>
+      <div className="fixed top-56 left-1/3 w-12 h-12 bg-emerald-300/20 rotate-45 z-0 pointer-events-none"></div>
+      
+      {/* Centro izquierda */}
+      <div className="fixed top-1/2 left-16 w-24 h-24 border-3 border-green-500/40 rotate-45 z-0 pointer-events-none shadow-lg shadow-green-500/10"></div>
+      <div className="fixed top-1/2 left-32 w-10 h-10 bg-teal-400/20 rounded-lg -rotate-12 z-0 pointer-events-none"></div>
+      
+      {/* Centro derecha */}
+      <div className="fixed top-1/3 right-20 w-18 h-18 border-3 border-emerald-600/35 rounded-2xl rotate-45 z-0 pointer-events-none shadow-lg shadow-emerald-600/10"></div>
+      <div className="fixed top-2/3 right-32 w-22 h-22 border-3 border-green-400/40 rotate-12 rounded-lg z-0 pointer-events-none"></div>
+      
+      {/* Inferior izquierda */}
+      <div className="fixed bottom-1/3 left-20 w-16 h-16 border-3 border-teal-600/40 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-600/10"></div>
+      <div className="fixed bottom-1/4 left-40 w-14 h-14 bg-green-300/20 rounded-xl rotate-45 z-0 pointer-events-none"></div>
+      
+      {/* Inferior derecha */}
+      <div className="fixed bottom-20 right-1/4 w-20 h-20 border-3 border-emerald-500/45 rounded-lg -rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
+      <div className="fixed bottom-32 right-1/3 w-12 h-12 bg-teal-400/25 rotate-6 z-0 pointer-events-none"></div>
+      
+      {/* Contenido principal */}
+      <div className="relative z-10 space-y-6">
+      {/* HEADER - Paleta verde y blanco vibrante - STICKY para que siempre esté visible */}
+      <div className="sticky top-0 z-50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-lg border-2 border-green-100 backdrop-blur-sm">
         <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+          <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 bg-clip-text text-transparent">
             Gestión de Empleados
           </h1>
-          <p className="text-gray-600 text-sm mt-2">Administra tu equipo, asigna roles y controla accesos</p>
+          <p className="text-gray-600 text-sm mt-2 font-medium">Administra tu equipo, asigna roles y controla accesos</p>
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* KPIs - Verde vibrante con blanco */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
         
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl shadow-lg text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-              <Users className="w-6 h-6" />
+        {/* Total Empleados - Verde principal */}
+        <div className="group relative bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-green-400 hover:scale-105">
+          <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div className="relative">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
+                <Users className="w-7 h-7 text-white" />
+              </div>
+              <span className="text-xs font-bold bg-white text-green-600 px-4 py-1.5 rounded-full shadow-md">
+                TOTAL
+              </span>
             </div>
-            <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-              TOTAL
-            </span>
+            <h3 className="text-4xl font-black mb-1 text-white">{totalEmployees}</h3>
+            <p className="text-sm text-green-50 font-semibold">Empleados activos</p>
           </div>
-          <h3 className="text-3xl font-bold mb-1">{totalEmployees}</h3>
-          <p className="text-sm text-blue-100">Empleados activos</p>
         </div>
 
-        <div className="bg-gradient-to-br from-green-500 to-green-600 p-6 rounded-2xl shadow-lg text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-              <Briefcase className="w-6 h-6" />
+        {/* Preventistas - Verde claro vibrante */}
+        <div className="group relative bg-gradient-to-br from-emerald-400 via-green-400 to-teal-500 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-emerald-300 hover:scale-105">
+          <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div className="relative">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
+                <Briefcase className="w-7 h-7 text-white" />
+              </div>
+              <span className="text-xs font-bold bg-white text-emerald-600 px-4 py-1.5 rounded-full shadow-md">
+                VENTAS
+              </span>
             </div>
-            <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-              VENTAS
-            </span>
+            <h3 className="text-4xl font-black mb-1 text-white">{totalPreventistas}</h3>
+            <p className="text-sm text-emerald-50 font-semibold">Preventistas en ruta</p>
           </div>
-          <h3 className="text-3xl font-bold mb-1">{totalPreventistas}</h3>
-          <p className="text-sm text-green-100">Preventistas en ruta</p>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl shadow-lg text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-              <ShieldCheck className="w-6 h-6" />
+        {/* Admins - Rojo acento vibrante */}
+        <div className="group relative bg-gradient-to-br from-red-500 via-red-600 to-rose-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-red-400 hover:scale-105">
+          <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div className="relative">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
+                <ShieldCheck className="w-7 h-7 text-white" />
+              </div>
+              <span className="text-xs font-bold bg-white text-red-600 px-4 py-1.5 rounded-full shadow-md">
+                ADMINS
+              </span>
             </div>
-            <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-              ADMINS
-            </span>
+            <h3 className="text-4xl font-black mb-1 text-white">{totalAdmins}</h3>
+            <p className="text-sm text-red-50 font-semibold">Acceso total</p>
           </div>
-          <h3 className="text-3xl font-bold mb-1">{totalAdmins}</h3>
-          <p className="text-sm text-purple-100">Acceso total</p>
         </div>
       </div>
 
-      {/* FORMULARIO */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200">
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-8 py-6 border-b border-gray-200 rounded-t-2xl">
+      {/* FORMULARIO - Blanco con acentos verdes vibrantes */}
+      <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
+        <div className="bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 px-8 py-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-blue-600 rounded-xl shadow-lg shadow-blue-900/20">
-                <Users className="w-6 h-6 text-white" />
+            <div className="flex items-center gap-4">
+              <div className="p-4 bg-white rounded-2xl shadow-lg">
+                <Users className="w-7 h-7 text-green-600" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-2xl font-black text-white">
                   {isEditing ? 'Editar Empleado' : 'Nuevo Empleado'}
                 </h2>
-                <p className="text-sm text-gray-600 mt-0.5">
+                <p className="text-sm text-green-50 mt-1 font-medium">
                   {isEditing ? 'Actualiza la información del empleado' : 'Completa los datos para agregar un nuevo empleado'}
                 </p>
               </div>
@@ -326,7 +412,7 @@ export default function EmployeesManagement() {
                   clearForm()
                   setFormError(null)
                 }}
-                className="text-sm text-gray-600 hover:text-gray-900 font-medium"
+                className="text-sm text-white hover:text-green-100 font-bold px-4 py-2 bg-white/20 rounded-xl hover:bg-white/30 transition-all"
               >
                 Cancelar edición
               </button>
@@ -336,21 +422,21 @@ export default function EmployeesManagement() {
 
         <div className="p-8">
           {formError && (
-            <div className="mb-6 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl">
-              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="mb-6 flex items-start gap-3 bg-red-50 border-2 border-red-300 text-red-700 p-5 rounded-2xl shadow-lg">
+              <AlertCircle className="w-6 h-6 flex-shrink-0 mt-0.5 text-red-600" />
               <div>
-                <p className="font-semibold">Error</p>
-                <p className="text-sm mt-0.5">{formError}</p>
+                <p className="font-bold text-base">Error</p>
+                <p className="text-sm mt-1">{formError}</p>
               </div>
             </div>
           )}
 
           {formSuccess && (
-            <div className="mb-6 flex items-start gap-3 bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl">
-              <Users className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="mb-6 flex items-start gap-3 bg-green-50 border-2 border-green-300 text-green-700 p-5 rounded-2xl shadow-lg">
+              <Users className="w-6 h-6 flex-shrink-0 mt-0.5 text-green-600" />
               <div>
-                <p className="font-semibold">¡Éxito!</p>
-                <p className="text-sm mt-0.5">
+                <p className="font-bold text-base">¡Éxito!</p>
+                <p className="text-sm mt-1">
                   {isEditing ? 'El empleado ha sido actualizado correctamente.' : 'El empleado ha sido registrado correctamente.'}
                 </p>
               </div>
@@ -360,17 +446,17 @@ export default function EmployeesManagement() {
           <form onSubmit={handleSubmit} className="space-y-8">
             
             {/* Datos Personales */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 pb-2 border-b-2 border-blue-100">
-                <div className="w-1 h-6 bg-blue-600 rounded-full"></div>
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+            <div className="space-y-5">
+              <div className="flex items-center gap-3 pb-3 border-b-4 border-green-500">
+                <div className="w-2 h-8 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full shadow-lg"></div>
+                <h3 className="text-base font-black text-gray-900 uppercase tracking-wider">
                   Datos Personales
                 </h3>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">
+                  <label className="block text-sm font-bold text-gray-800">
                     Nombre Completo <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -378,14 +464,14 @@ export default function EmployeesManagement() {
                     name="full_name"
                     value={formData.full_name}
                     onChange={handleChange}
-                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300"
                     placeholder="Juan Pérez"
                     required
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">
+                  <label className="block text-sm font-bold text-gray-800">
                     Correo Electrónico <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -393,14 +479,14 @@ export default function EmployeesManagement() {
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300"
                     placeholder="empleado@empresa.com"
                     required
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">
+                  <label className="block text-sm font-bold text-gray-800">
                     Teléfono <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -408,7 +494,7 @@ export default function EmployeesManagement() {
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
-                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300"
                     placeholder="77712345"
                     required
                   />
@@ -417,10 +503,10 @@ export default function EmployeesManagement() {
             </div>
 
             {/* Cuenta y Acceso */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 pb-2 border-b-2 border-purple-100">
-                <div className="w-1 h-6 bg-purple-600 rounded-full"></div>
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+            <div className="space-y-5">
+              <div className="flex items-center gap-3 pb-3 border-b-4 border-green-500">
+                <div className="w-2 h-8 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full shadow-lg"></div>
+                <h3 className="text-base font-black text-gray-900 uppercase tracking-wider">
                   Cuenta y Acceso
                 </h3>
               </div>
@@ -428,41 +514,43 @@ export default function EmployeesManagement() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 
                 <div className="space-y-3">
-                  <label className="block text-sm font-semibold text-gray-700">
+                  <label className="block text-sm font-bold text-gray-800">
                     Rol / Cargo <span className="text-red-500">*</span>
                   </label>
                   <div className="grid grid-cols-2 gap-4">
+                    {/* Preventista - Verde vibrante */}
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, job_title: 'Preventista' })}
-                      className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                      className={`flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 transition-all duration-300 shadow-lg hover:shadow-xl ${
                         formData.job_title === 'Preventista'
-                          ? 'bg-gradient-to-br from-green-600 to-emerald-600 text-white border-green-600 shadow-lg shadow-green-900/20'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-green-300 hover:bg-green-50'
+                          ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white border-green-400 scale-105'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-green-400 hover:bg-green-50'
                       }`}
                     >
-                      <Briefcase className="w-6 h-6" />
-                      <span className="text-sm font-semibold">Preventista</span>
+                      <Briefcase className="w-7 h-7" />
+                      <span className="text-sm font-black">Preventista</span>
                     </button>
 
+                    {/* Administrador - Rojo acento */}
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, job_title: 'Administrador' })}
-                      className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                      className={`flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 transition-all duration-300 shadow-lg hover:shadow-xl ${
                         formData.job_title === 'Administrador'
-                          ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white border-purple-600 shadow-lg shadow-purple-900/20'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300 hover:bg-purple-50'
+                          ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white border-red-400 scale-105'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-red-400 hover:bg-red-50'
                       }`}
                     >
-                      <ShieldCheck className="w-6 h-6" />
-                      <span className="text-sm font-semibold">Administrador</span>
+                      <ShieldCheck className="w-7 h-7" />
+                      <span className="text-sm font-black">Administrador</span>
                     </button>
                   </div>
                 </div>
 
                 {!isEditing && (
                   <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-gray-700">
+                    <label className="block text-sm font-bold text-gray-800">
                       Contraseña Temporal <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -470,11 +558,11 @@ export default function EmployeesManagement() {
                       name="password"
                       value={formData.password}
                       onChange={handleChange}
-                      className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300"
                       placeholder="******"
                       required={!isEditing}
                     />
-                    <p className="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p>
+                    <p className="text-xs text-gray-600 mt-1 font-medium">Mínimo 6 caracteres</p>
                   </div>
                 )}
               </div>
@@ -485,28 +573,28 @@ export default function EmployeesManagement() {
               <button
                 type="button"
                 onClick={handleClearForm}
-                className="px-8 py-3.5 border-2 border-orange-200 text-orange-700 bg-orange-50 rounded-xl hover:bg-orange-100 hover:border-orange-300 font-semibold transition-all flex items-center gap-2 shadow-sm hover:shadow"
+                className="px-8 py-4 border-2 border-red-300 text-red-700 bg-red-50 rounded-2xl hover:bg-red-100 hover:border-red-400 font-bold transition-all shadow-md hover:shadow-lg flex items-center gap-2"
               >
                 <X className="w-5 h-5" />
-                Limpiar Formulario
+                Limpiar
               </button>
               <button
                 type="submit"
                 disabled={formLoading}
-                className={`flex-1 flex items-center justify-center gap-3 px-8 py-3.5 rounded-xl text-white font-semibold transition-all shadow-lg ${
+                className={`flex-1 flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-white font-black transition-all shadow-xl ${
                   formLoading
                     ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-900/20 hover:shadow-xl'
+                    : 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 hover:from-green-600 hover:via-green-700 hover:to-emerald-700 hover:shadow-2xl hover:scale-105'
                 }`}
               >
                 {formLoading ? (
                   <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <Loader2 className="w-6 h-6 animate-spin" />
                     Guardando...
                   </>
                 ) : (
                   <>
-                    <Save className="w-5 h-5" />
+                    <Save className="w-6 h-6" />
                     {isEditing ? 'Actualizar Empleado' : 'Crear Empleado'}
                   </>
                 )}
@@ -516,25 +604,25 @@ export default function EmployeesManagement() {
         </div>
       </div>
 
-      {/* TABLA */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      {/* TABLA - Blanco con acentos verdes */}
+      <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
         
-        <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-5 border-b border-gray-200">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-5 border-b-2 border-green-200">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="relative flex-1 w-full max-w-2xl">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-green-600" />
               <input 
                 type="text"
                 placeholder="Buscar por nombre, correo o cargo..."
-                className="w-full pl-12 pr-4 py-3 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="w-full pl-14 pr-5 py-4 text-sm border-2 border-green-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300 bg-white font-medium"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-600">Mostrando</span>
-              <span className="font-bold text-blue-600">{filteredEmployees.length}</span>
-              <span className="text-gray-600">resultados</span>
+            <div className="flex items-center gap-2 text-sm bg-white px-5 py-3 rounded-xl border-2 border-green-200 shadow-sm">
+              <span className="text-gray-600 font-medium">Mostrando</span>
+              <span className="font-black text-green-600 text-base">{filteredEmployees.length}</span>
+              <span className="text-gray-600 font-medium">resultados</span>
             </div>
           </div>
         </div>
@@ -542,86 +630,86 @@ export default function EmployeesManagement() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="bg-gradient-to-r from-gray-50 to-slate-50 border-b-2 border-gray-200">
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Empleado</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Contacto</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Rol/Cargo</th>
-                <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Estado</th>
-                <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Acciones</th>
+              <tr className="bg-gradient-to-r from-green-100 to-emerald-100 border-b-4 border-green-300">
+                <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Empleado</th>
+                <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Contacto</th>
+                <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Rol/Cargo</th>
+                <th className="px-6 py-5 text-center text-xs font-black text-gray-800 uppercase tracking-wider">Estado</th>
+                <th className="px-6 py-5 text-center text-xs font-black text-gray-800 uppercase tracking-wider">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-16 text-center">
-                    <div className="flex flex-col items-center justify-center gap-3">
-                      <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-                      <p className="text-gray-600 font-medium">Cargando empleados...</p>
+                  <td colSpan={5} className="px-6 py-20 text-center">
+                    <div className="flex flex-col items-center justify-center gap-4">
+                      <Loader2 className="w-12 h-12 text-green-600 animate-spin" />
+                      <p className="text-gray-700 font-bold text-lg">Cargando empleados...</p>
                     </div>
                   </td>
                 </tr>
               ) : filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-16 text-center text-gray-500">
+                  <td colSpan={5} className="px-6 py-20 text-center text-gray-600 font-semibold text-lg">
                     No se encontraron empleados
                   </td>
                 </tr>
               ) : (
                 filteredEmployees.map((emp) => (
-                  <tr key={emp.id} className="hover:bg-gradient-to-r hover:from-blue-50/30 hover:to-indigo-50/30 transition-all">
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-blue-700 font-bold text-lg shadow-sm">
+                  <tr key={emp.id} className="hover:bg-gradient-to-r hover:from-green-50/50 hover:to-emerald-50/50 transition-all">
+                    <td className="px-6 py-6">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white font-black text-xl shadow-lg">
                           {emp.full_name.charAt(0)}
                         </div>
                         <div>
                           <p className="text-sm font-bold text-gray-900">{emp.full_name}</p>
-                          <p className="text-xs text-gray-500">ID: {emp.id.slice(0, 8)}</p>
+                          <p className="text-xs text-gray-500 font-medium">ID: {emp.id.slice(0, 8)}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-5">
-                      <div className="text-sm text-gray-700 font-medium">{emp.email}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{emp.phone}</div>
+                    <td className="px-6 py-6">
+                      <div className="text-sm text-gray-800 font-bold">{emp.email}</div>
+                      <div className="text-xs text-gray-600 mt-1 font-medium">{emp.phone}</div>
                     </td>
-                    <td className="px-6 py-5">
+                    <td className="px-6 py-6">
                       {emp.role === 'Administrador' ? (
-                        <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                        <span className="inline-flex items-center px-4 py-2 rounded-xl text-xs font-black bg-red-100 text-red-700 border-2 border-red-300 shadow-md">
                           Administrador
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
+                        <span className="inline-flex items-center px-4 py-2 rounded-xl text-xs font-black bg-green-100 text-green-700 border-2 border-green-300 shadow-md">
                           {emp.job_title || 'Preventista'}
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-5 text-center">
-                      <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-100 text-green-700 border border-green-200">
-                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                    <td className="px-6 py-6 text-center">
+                      <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black bg-emerald-100 text-emerald-700 border-2 border-emerald-300 shadow-md">
+                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
                         Activo
                       </span>
                     </td>
-                    <td className="px-6 py-5">
+                    <td className="px-6 py-6">
                       <div className="flex items-center justify-center gap-2">
                         <button 
                           onClick={() => handleEditClick(emp)}
-                          className="p-2.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all border border-transparent hover:border-blue-200" 
+                          className="p-3 text-gray-700 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all border-2 border-transparent hover:border-green-300 shadow-sm hover:shadow-md" 
                           title="Editar"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <Edit2 className="w-5 h-5" />
                         </button>
                         <button 
-                          className="p-2.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-all border border-transparent hover:border-orange-200" 
+                          className="p-3 text-gray-700 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all border-2 border-transparent hover:border-emerald-300 shadow-sm hover:shadow-md" 
                           title="Ver Rutas"
                         >
-                          <MapPin className="w-4 h-4" />
+                          <MapPin className="w-5 h-5" />
                         </button>
                         <button 
                           onClick={() => handleDeleteEmployee(emp)}
-                          className="p-2.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-200" 
+                          className="p-3 text-gray-700 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border-2 border-transparent hover:border-red-300 shadow-sm hover:shadow-md" 
                           title="Desactivar"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
                     </td>
@@ -632,15 +720,16 @@ export default function EmployeesManagement() {
           </table>
         </div>
 
-        <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-4 border-t-2 border-gray-200 flex items-center justify-between">
-          <span className="text-sm text-gray-600">
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-5 border-t-4 border-green-300 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <span className="text-sm text-gray-700 font-bold">
             Página 1 de 1
           </span>
-          <div className="flex gap-2">
-            <button className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 font-medium transition-all" disabled>Anterior</button>
-            <button className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 font-medium transition-all" disabled>Siguiente</button>
+          <div className="flex gap-3">
+            <button className="px-6 py-3 text-sm border-2 border-green-200 rounded-xl bg-white hover:bg-green-50 hover:border-green-400 disabled:opacity-50 disabled:hover:bg-white disabled:hover:border-green-200 font-bold transition-all shadow-md" disabled>Anterior</button>
+            <button className="px-6 py-3 text-sm border-2 border-green-200 rounded-xl bg-white hover:bg-green-50 hover:border-green-400 disabled:opacity-50 disabled:hover:bg-white disabled:hover:border-green-200 font-bold transition-all shadow-md" disabled>Siguiente</button>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

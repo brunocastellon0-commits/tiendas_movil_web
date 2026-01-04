@@ -1,5 +1,6 @@
 'use client'
 
+import { memo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -34,16 +35,11 @@ const createCustomIcon = (fullName: string) => {
   })
 }
 
-export default function LeafletMap({ employees }: { employees: EmployeeLocation[] }) {
+function LeafletMap({ employees }: { employees: EmployeeLocation[] }) {
   // Coordenadas por defecto (Cochabamba, Bolivia)
   const centerPosition: [number, number] = employees.length > 0 
     ? [employees[0].latitude, employees[0].longitude]
     : [-17.3935, -66.1570]
-
-  console.log('🗺️ LeafletMap rendering with', employees.length, 'employees')
-  employees.forEach(emp => {
-    console.log(`   📍 ${emp.full_name}: [${emp.latitude}, ${emp.longitude}]`)
-  })
 
   return (
     <div className="w-full h-[600px] rounded-2xl overflow-hidden shadow-lg border border-gray-200 z-0">
@@ -88,3 +84,17 @@ export default function LeafletMap({ employees }: { employees: EmployeeLocation[
     </div>
   )
 }
+
+// Memoize the component to prevent unnecessary re-renders
+export default memo(LeafletMap, (prevProps, nextProps) => {
+  // Only re-render if the number of employees changed or employee IDs changed
+  if (prevProps.employees.length !== nextProps.employees.length) return false
+  
+  // Check if employee IDs are the same
+  const prevIds = prevProps.employees.map(e => e.id).join(',')
+  const nextIds = nextProps.employees.map(e => e.id).join(',')
+  
+  return prevIds === nextIds
+})
+
+LeafletMap.displayName = 'LeafletMap'

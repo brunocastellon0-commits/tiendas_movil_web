@@ -1,871 +1,118 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { useFormPersistence } from '@/hooks/useFormPersistence'
-import { 
-  Search, 
-  Plus, 
-  Filter, 
-  Package, 
-  AlertTriangle, 
-  Tags, 
-  Truck, 
-  MoreHorizontal,
-  Edit2,
-  Trash2,
-  Eye,
-  ArrowUpDown,
-  X,
-  Save,
-  Loader2
-} from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { Package, Truck, Tags } from 'lucide-react'
+import InventoryTab from './components/InventoryTab'
+import CategoriesTab from './components/CategoriesTab'
+import ProvidersTab from './components/ProvidersTab'
 
-// --- 1. Tipos TypeScript ---
-
-type Category = {
-  id: string
-  nombre_categoria: string
-}
-
-type Provider = {
-  id: string
-  nombre: string
-  razon_social: string
-}
-
-type Product = {
-  id: string
-  codigo_producto: string
-  nombre_producto: string
-  estado: string
-  precio_base_venta: number
-  stock_actual: number
-  stock_min: number
-  stock_max: number
-  unidad_base_venta: string
-  categoria: Category | null
-  proveedor: Provider | null
-}
-
-// --- 2. Componente de Stock Visual ---
-const StockCell = ({ current, min, max }: { current: number, min: number, max: number }) => {
-  let colorClass = 'bg-green-500'
-  let statusText = 'Óptimo'
-  let textColor = 'text-green-700'
-  let bgBadge = 'bg-green-100'
-
-  if (current <= min) {
-    colorClass = 'bg-red-500'
-    statusText = 'Bajo'
-    textColor = 'text-red-700'
-    bgBadge = 'bg-red-100'
-  } else if (current > max) {
-    colorClass = 'bg-yellow-500'
-    statusText = 'Excedente'
-    textColor = 'text-yellow-700'
-    bgBadge = 'bg-yellow-100'
-  } else if (current === 0) {
-    colorClass = 'bg-gray-400'
-    statusText = 'Sin Stock'
-    textColor = 'text-gray-700'
-    bgBadge = 'bg-gray-100'
-  }
-
-  const percentage = max > 0 ? Math.min((current / max) * 100, 100) : 0
-
-  return (
-    <div className="w-36">
-      <div className="flex justify-between items-center mb-1.5">
-        <span className="text-xs font-bold text-gray-800">{current} u.</span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${bgBadge} ${textColor}`}>
-          {statusText}
-        </span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-        <div 
-          className={`h-1.5 rounded-full transition-all duration-500 ${colorClass}`} 
-          style={{ width: `${percentage}%` }} 
-        />
-      </div>
-      <div className="flex justify-between text-[9px] text-gray-400 mt-1">
-        <span>Min: {min}</span>
-        <span>Max: {max}</span>
-      </div>
-    </div>
-  )
-}
-
-// --- 3. Componente Principal ---
 export default function ProductsPage() {
-  const router = useRouter()
-  const supabase = createClient()
-  
   const [activeTab, setActiveTab] = useState<'inventario' | 'proveedores' | 'categorias'>('inventario')
-  const [products, setProducts] = useState<Product[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [providers, setProviders] = useState<Provider[]>([])
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  
-  const [formLoading, setFormLoading] = useState(false)
-  const [formError, setFormError] = useState<string | null>(null)
-  const [formSuccess, setFormSuccess] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  
-  const {
-    formData,
-    setFormData,
-    clearForm
-  } = useFormPersistence('productos_form', {
-    codigo_producto: '',
-    nombre_producto: '',
-    categoria_id: '',
-    proveedor_id: '',
-    precio_base_venta: '',
-    stock_actual: '',
-    stock_min: '',
-    stock_max: '',
-    unidad_base_venta: 'unidad',
-    estado: 'Activo'
-  })
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-        
-        const { data: productsData, error: productsError } = await supabase
-          .from('productos')
-          .select(`
-            *,
-            categoria:categorias (id, nombre_categoria),
-            proveedor:proveedores (id, nombre, razon_social)
-          `)
-          .order('created_at', { ascending: false })
-
-        if (productsError) throw productsError
-        if (productsData) setProducts(productsData as any)
-
-        const { data: categoriesData, error: categoriesError } = await supabase
-          .from('categorias')
-          .select('*')
-          .order('nombre_categoria')
-
-        if (categoriesError) throw categoriesError
-        if (categoriesData) setCategories(categoriesData)
-
-        const { data: providersData, error: providersError } = await supabase
-          .from('proveedores')
-          .select('*')
-          .order('nombre')
-
-        if (providersError) throw providersError
-        if (providersData) setProviders(providersData)
-
-      } catch (error) {
-        console.error('Error cargando datos:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (activeTab === 'inventario') {
-      fetchData()
-    }
-  }, [activeTab])
-
-  const filteredProducts = useMemo(() => {
-    return products.filter(p => 
-      p.nombre_producto.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.codigo_producto.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.categoria?.nombre_categoria.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  }, [products, searchTerm])
-
-  const kpis = useMemo(() => {
-    const totalValue = products.reduce((acc, p) => acc + (p.stock_actual * p.precio_base_venta), 0)
-    const lowStockCount = products.filter(p => p.stock_actual <= p.stock_min).length
-    const totalSKUs = products.length
-    
-    return { totalValue, lowStockCount, totalSKUs }
-  }, [products])
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(amount)
-  }
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value })
-  }
-
-  const handleClearForm = () => {
-    if (confirm('¿Estás seguro de que deseas limpiar todos los campos del formulario?')) {
-      clearForm()
-      setFormError(null)
-      setFormSuccess(false)
-      setIsEditing(false)
-      setEditingId(null)
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setFormError(null)
-    setFormSuccess(false)
-
-    if (!formData.nombre_producto || !formData.codigo_producto) {
-      setFormError('Por favor completa el nombre y código del producto.')
-      return
-    }
-
-    if (!formData.precio_base_venta || parseFloat(formData.precio_base_venta) <= 0) {
-      setFormError('Por favor ingresa un precio válido.')
-      return
-    }
-
-    try {
-      setFormLoading(true)
-
-      if (isEditing && editingId) {
-        const { error } = await supabase
-          .from('productos')
-          .update({
-            codigo_producto: formData.codigo_producto,
-            nombre_producto: formData.nombre_producto,
-            categoria_id: formData.categoria_id || null,
-            proveedor_id: formData.proveedor_id || null,
-            precio_base_venta: parseFloat(formData.precio_base_venta),
-            stock_actual: parseInt(formData.stock_actual) || 0,
-            stock_min: parseInt(formData.stock_min) || 0,
-            stock_max: parseInt(formData.stock_max) || 100,
-            unidad_base_venta: formData.unidad_base_venta,
-            estado: formData.estado
-          })
-          .eq('id', editingId)
-
-        if (error) throw error
-
-        setFormSuccess(true)
-        
-        const { data: updatedProducts } = await supabase
-          .from('productos')
-          .select(`
-            *,
-            categoria:categorias (id, nombre_categoria),
-            proveedor:proveedores (id, nombre, razon_social)
-          `)
-          .order('created_at', { ascending: false })
-        
-        if (updatedProducts) setProducts(updatedProducts as any)
-
-      } else {
-        const { data, error } = await supabase
-          .from('productos')
-          .insert([{
-            codigo_producto: formData.codigo_producto,
-            nombre_producto: formData.nombre_producto,
-            categoria_id: formData.categoria_id || null,
-            proveedor_id: formData.proveedor_id || null,
-            precio_base_venta: parseFloat(formData.precio_base_venta),
-            stock_actual: parseInt(formData.stock_actual) || 0,
-            stock_min: parseInt(formData.stock_min) || 0,
-            stock_max: parseInt(formData.stock_max) || 100,
-            unidad_base_venta: formData.unidad_base_venta,
-            estado: formData.estado
-          }])
-          .select(`
-            *,
-            categoria:categorias (id, nombre_categoria),
-            proveedor:proveedores (id, nombre, razon_social)
-          `)
-
-        if (error) throw error
-
-        setFormSuccess(true)
-        
-        if (data && data.length > 0) {
-          setProducts([data[0] as any, ...products])
-        }
-      }
-
-      clearForm()
-      setIsEditing(false)
-      setEditingId(null)
-
-      setTimeout(() => {
-        setFormSuccess(false)
-      }, 3000)
-
-    } catch (err: any) {
-      console.error('Error guardando producto:', err)
-      
-      let errorMessage = 'Ocurrió un error inesperado'
-      if (err.message.includes('duplicate') || err.message.includes('unique')) {
-        errorMessage = 'Ya existe un producto con ese código SKU'
-      } else if (err.message) {
-        errorMessage = err.message
-      }
-      
-      setFormError(errorMessage)
-    } finally {
-      setFormLoading(false)
-    }
-  }
-
-  const handleEdit = (product: Product) => {
-    setFormData({
-      codigo_producto: product.codigo_producto,
-      nombre_producto: product.nombre_producto,
-      categoria_id: product.categoria?.id || '',
-      proveedor_id: product.proveedor?.id || '',
-      precio_base_venta: product.precio_base_venta.toString(),
-      stock_actual: product.stock_actual.toString(),
-      stock_min: product.stock_min.toString(),
-      stock_max: product.stock_max.toString(),
-      unidad_base_venta: product.unidad_base_venta,
-      estado: product.estado
-    })
-    setIsEditing(true)
-    setEditingId(product.id)
-    setFormError(null)
-    setFormSuccess(false)
-    
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  const handleDelete = async (product: Product) => {
-    if (!confirm(`¿Estás seguro de desactivar el producto "${product.nombre_producto}"?`)) {
-      return
-    }
-
-    try {
-      const { error } = await supabase
-        .from('productos')
-        .update({ estado: 'Inactivo' })
-        .eq('id', product.id)
-
-      if (error) throw error
-
-      setProducts(products.map(p => 
-        p.id === product.id ? { ...p, estado: 'Inactivo' } : p
-      ))
-
-    } catch (err: any) {
-      console.error('Error desactivando producto:', err)
-      alert('Error al desactivar el producto')
-    }
-  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6 space-y-8">
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
       
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Patrón de rombos/diamantes armónico */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-35" 
+           style={{
+             backgroundImage: `
+               repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(16, 185, 129, 0.25) 35px, rgba(16, 185, 129, 0.25) 39px),
+               repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(16, 185, 129, 0.25) 35px, rgba(16, 185, 129, 0.25) 39px)
+             `,
+           }}>
+      </div>
+      
+      {/* Patrón de puntos sutiles */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-25" 
+           style={{
+             backgroundImage: `radial-gradient(circle at 2px 2px, rgba(20, 184, 166, 0.12) 1px, transparent 1px)`,
+             backgroundSize: '48px 48px'
+           }}>
+      </div>
+      
+      {/* Degradado superior */}
+      <div className="fixed inset-0 z-0 bg-gradient-to-b from-white/40 via-transparent to-transparent pointer-events-none"></div>
+      
+      {/* Círculos blur */}
+      <div className="fixed -top-24 -left-24 w-96 h-96 bg-green-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed top-32 left-32 w-64 h-64 bg-emerald-300/20 rounded-full blur-2xl z-0 pointer-events-none"></div>
+      <div className="fixed -top-32 -right-32 w-[500px] h-[500px] bg-teal-200/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-100/20 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed -bottom-40 -left-20 w-[450px] h-[450px] bg-green-300/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      <div className="fixed -bottom-20 -right-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
+      
+      {/* Figuras geométricas */}
+      <div className="fixed top-20 right-1/4 w-20 h-20 border-3 border-emerald-500/40 rounded-xl rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
+      <div className="fixed top-32 right-1/3 w-14 h-14 bg-green-400/15 rounded-lg -rotate-6 z-0 pointer-events-none"></div>
+      <div className="fixed top-40 left-1/4 w-16 h-16 border-3 border-teal-500/35 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-500/10"></div>
+      <div className="fixed top-56 left-1/3 w-12 h-12 bg-emerald-300/20 rotate-45 z-0 pointer-events-none"></div>
+      <div className="fixed top-1/2 left-16 w-24 h-24 border-3 border-green-500/40 rotate-45 z-0 pointer-events-none shadow-lg shadow-green-500/10"></div>
+      <div className="fixed top-1/2 left-32 w-10 h-10 bg-teal-400/20 rounded-lg -rotate-12 z-0 pointer-events-none"></div>
+      <div className="fixed top-1/3 right-20 w-18 h-18 border-3 border-emerald-600/35 rounded-2xl rotate-45 z-0 pointer-events-none shadow-lg shadow-emerald-600/10"></div>
+      <div className="fixed top-2/3 right-32 w-22 h-22 border-3 border-green-400/40 rotate-12 rounded-lg z-0 pointer-events-none"></div>
+      <div className="fixed bottom-1/3 left-20 w-16 h-16 border-3 border-teal-600/40 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-600/10"></div>
+      <div className="fixed bottom-1/4 left-40 w-14 h-14 bg-green-300/20 rounded-xl rotate-45 z-0 pointer-events-none"></div>
+      <div className="fixed bottom-20 right-1/4 w-20 h-20 border-3 border-emerald-500/45 rounded-lg -rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
+      <div className="fixed bottom-32 right-1/3 w-12 h-12 bg-teal-400/25 rotate-6 z-0 pointer-events-none"></div>
+      
+      {/* Contenido principal */}
+      <div className="relative z-10 space-y-6">
+      
+      {/* HEADER - Paleta verde vibrante */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-lg border-2 border-green-100">
         <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+          <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 bg-clip-text text-transparent">
             Inventario y Productos
           </h1>
-          <p className="text-gray-600 text-sm mt-2">Gestiona tu catálogo, controla existencias y proveedores</p>
+          <p className="text-gray-600 text-sm mt-2 font-medium">Gestiona tu catálogo, controla existencias y proveedores</p>
         </div>
       </div>
 
-      {/* PESTAÑAS */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-2">
-        <nav className="flex space-x-2">
+      {/* PESTAÑAS - Diseño vibrante */}
+      <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 p-3">
+        <nav className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={() => setActiveTab('inventario')}
-            className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
+            className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all duration-300 ${
               activeTab === 'inventario'
-                ? 'bg-green-600 text-white shadow-lg shadow-green-900/20'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white shadow-xl shadow-green-900/30 scale-105 border-2 border-green-400'
+                : 'text-gray-700 hover:bg-green-50 border-2 border-transparent hover:border-green-200 hover:scale-102 shadow-sm'
             }`}
           >
-            <Package className="w-4 h-4" />
+            <Package className="w-5 h-5" />
             Inventario General
           </button>
           <button
             onClick={() => setActiveTab('proveedores')}
-            className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
+            className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all duration-300 ${
               activeTab === 'proveedores'
-                ? 'bg-green-600 text-white shadow-lg shadow-green-900/20'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white shadow-xl shadow-green-900/30 scale-105 border-2 border-green-400'
+                : 'text-gray-700 hover:bg-green-50 border-2 border-transparent hover:border-green-200 hover:scale-102 shadow-sm'
             }`}
           >
-            <Truck className="w-4 h-4" />
+            <Truck className="w-5 h-5" />
             Proveedores
           </button>
           <button
             onClick={() => setActiveTab('categorias')}
-            className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
+            className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all duration-300 ${
               activeTab === 'categorias'
-                ? 'bg-green-600 text-white shadow-lg shadow-green-900/20'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white shadow-xl shadow-green-900/30 scale-105 border-2 border-green-400'
+                : 'text-gray-700 hover:bg-green-50 border-2 border-transparent hover:border-green-200 hover:scale-102 shadow-sm'
             }`}
           >
-            <Tags className="w-4 h-4" />
+            <Tags className="w-5 h-5" />
             Categorías
           </button>
         </nav>
       </div>
 
-      {activeTab === 'inventario' && (
-        <>
-          {/* KPIs */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl shadow-lg text-white">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-                  <Package className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-                  VALOR TOTAL
-                </span>
-              </div>
-              <h3 className="text-3xl font-bold mb-1">{formatCurrency(kpis.totalValue)}</h3>
-              <p className="text-sm text-blue-100">Calculado sobre precio base</p>
-            </div>
-
-            <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-2xl shadow-lg text-white">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-                  <AlertTriangle className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-                  ALERTAS
-                </span>
-              </div>
-              <h3 className="text-3xl font-bold mb-1">{kpis.lowStockCount}</h3>
-              <p className="text-sm text-orange-100">Productos con stock bajo</p>
-            </div>
-
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl shadow-lg text-white">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-                  <Tags className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-                  TOTAL SKUs
-                </span>
-              </div>
-              <h3 className="text-3xl font-bold mb-1">{kpis.totalSKUs}</h3>
-              <p className="text-sm text-purple-100">Productos activos</p>
-            </div>
-          </div>
-
-          {/* FORMULARIO */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200">
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-8 py-6 border-b border-gray-200 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-green-600 rounded-xl shadow-lg shadow-green-900/20">
-                    <Package className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900">
-                      {isEditing ? 'Editar Producto' : 'Nuevo Producto'}
-                    </h2>
-                    <p className="text-sm text-gray-600 mt-0.5">
-                      {isEditing ? 'Actualiza la información del producto' : 'Completa los datos para agregar un nuevo producto'}
-                    </p>
-                  </div>
-                </div>
-                {isEditing && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditing(false)
-                      setEditingId(null)
-                      clearForm()
-                      setFormError(null)
-                    }}
-                    className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-                  >
-                    Cancelar edición
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="p-8">
-              {formError && (
-                <div className="mb-6 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl">
-                  <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold">Error</p>
-                    <p className="text-sm mt-0.5">{formError}</p>
-                  </div>
-                </div>
-              )}
-
-              {formSuccess && (
-                <div className="mb-6 flex items-start gap-3 bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl">
-                  <Package className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold">¡Éxito!</p>
-                    <p className="text-sm mt-0.5">
-                      {isEditing ? 'El producto ha sido actualizado correctamente.' : 'El producto ha sido creado correctamente.'}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-8">
-                
-                {/* Información Básica */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 pb-2 border-b-2 border-green-100">
-                    <div className="w-1 h-6 bg-green-600 rounded-full"></div>
-                    <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-                      Información Básica
-                    </h3>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-gray-700">
-                        Código SKU <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        name="codigo_producto"
-                        value={formData.codigo_producto}
-                        onChange={handleChange}
-                        className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                        placeholder="Ej: PRO-001"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-gray-700">
-                        Nombre del Producto <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        name="nombre_producto"
-                        value={formData.nombre_producto}
-                        onChange={handleChange}
-                        className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                        placeholder="Ej: Coca Cola 2L"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-gray-700">Categoría</label>
-                      <select
-                        name="categoria_id"
-                        value={formData.categoria_id}
-                        onChange={handleChange}
-                        className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                      >
-                        <option value="">Sin categoría</option>
-                        {categories.map(cat => (
-                          <option key={cat.id} value={cat.id}>{cat.nombre_categoria}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-gray-700">Proveedor</label>
-                      <select
-                        name="proveedor_id"
-                        value={formData.proveedor_id}
-                        onChange={handleChange}
-                        className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                      >
-                        <option value="">Sin proveedor</option>
-                        {providers.map(prov => (
-                          <option key={prov.id} value={prov.id}>{prov.nombre}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Precio y Stock */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 pb-2 border-b-2 border-blue-100">
-                    <div className="w-1 h-6 bg-blue-600 rounded-full"></div>
-                    <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-                      Precio y Stock
-                    </h3>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-gray-700">
-                        Precio Base (Bs) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        name="precio_base_venta"
-                        value={formData.precio_base_venta}
-                        onChange={handleChange}
-                        step="0.01"
-                        min="0"
-                        className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                        placeholder="10.50"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-gray-700">Stock Actual</label>
-                      <input
-                        type="number"
-                        name="stock_actual"
-                        value={formData.stock_actual}
-                        onChange={handleChange}
-                        min="0"
-                        className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                        placeholder="100"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-gray-700">Unidad</label>
-                      <input
-                        type="text"
-                        name="unidad_base_venta"
-                        value={formData.unidad_base_venta}
-                        onChange={handleChange}
-                        className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                        placeholder="unidad, caja, litro..."
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-gray-700">Stock Mínimo</label>
-                      <input
-                        type="number"
-                        name="stock_min"
-                        value={formData.stock_min}
-                        onChange={handleChange}
-                        min="0"
-                        className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                        placeholder="10"
-                      />
-                    </div>
-
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="block text-sm font-semibold text-gray-700">Stock Máximo</label>
-                      <input
-                        type="number"
-                        name="stock_max"
-                        value={formData.stock_max}
-                        onChange={handleChange}
-                        min="0"
-                        className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                        placeholder="500"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Botones */}
-                <div className="flex gap-4 pt-6 border-t-2 border-gray-100">
-                  <button
-                    type="button"
-                    onClick={handleClearForm}
-                    className="px-8 py-3.5 border-2 border-orange-200 text-orange-700 bg-orange-50 rounded-xl hover:bg-orange-100 hover:border-orange-300 font-semibold transition-all flex items-center gap-2 shadow-sm hover:shadow"
-                  >
-                    <X className="w-5 h-5" />
-                    Limpiar Formulario
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={formLoading}
-                    className={`flex-1 flex items-center justify-center gap-3 px-8 py-3.5 rounded-xl text-white font-semibold transition-all shadow-lg ${
-                      formLoading
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-green-900/20 hover:shadow-xl'
-                    }`}
-                  >
-                    {formLoading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        Guardando...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-5 h-5" />
-                        {isEditing ? 'Actualizar Producto' : 'Guardar Producto'}
-                      </>
-                    )}
-                  </button>
-                </div>
-
-              </form>
-            </div>
-          </div>
-
-          {/* TABLA */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-            
-            <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-5 border-b border-gray-200">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input 
-                    type="text"
-                    placeholder="Buscar producto por nombre, SKU o categoría..."
-                    className="w-full pl-12 pr-4 py-3 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-gray-600">Mostrando</span>
-                  <span className="font-bold text-green-600">{filteredProducts.length}</span>
-                  <span className="text-gray-600">registros</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gradient-to-r from-gray-50 to-slate-50 border-b-2 border-gray-200">
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Producto</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Categoría</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Stock</th>
-                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Precio</th>
-                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Estado</th>
-                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-16 text-center">
-                        <div className="flex flex-col items-center justify-center gap-3">
-                          <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
-                          <p className="text-gray-600 font-medium">Cargando inventario...</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : filteredProducts.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-16 text-center text-gray-500">
-                        No se encontraron productos
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredProducts.map((product) => (
-                      <tr key={product.id} className="hover:bg-gradient-to-r hover:from-green-50/30 hover:to-emerald-50/30 transition-all">
-                        
-                        <td className="px-6 py-5">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-sm font-bold text-gray-900">
-                              {product.nombre_producto}
-                            </span>
-                            <span className="text-xs text-gray-500 font-mono flex items-center gap-1.5">
-                              <span className="bg-gray-100 px-2 py-0.5 rounded text-[10px] font-semibold border border-gray-200">SKU</span> 
-                              {product.codigo_producto}
-                            </span>
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-5">
-                          {product.categoria ? (
-                            <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
-                              {product.categoria.nombre_categoria}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400 italic">Sin categoría</span>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-5">
-                          <StockCell 
-                            current={product.stock_actual} 
-                            min={product.stock_min} 
-                            max={product.stock_max} 
-                          />
-                        </td>
-
-                        <td className="px-6 py-5 text-right">
-                          <div className="text-base font-bold text-gray-900">
-                            {formatCurrency(product.precio_base_venta)}
-                          </div>
-                          <div className="text-[10px] text-gray-500">
-                            por {product.unidad_base_venta || 'unidad'}
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-5 text-center">
-                           <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
-                             product.estado === 'Activo' || product.estado === 'true'
-                               ? 'bg-green-100 text-green-700 border-green-200' 
-                               : 'bg-gray-100 text-gray-500 border-gray-200'
-                           }`}>
-                             <div className={`w-2 h-2 rounded-full ${
-                               product.estado === 'Activo' || product.estado === 'true' ? 'bg-green-500' : 'bg-gray-400'
-                             }`}></div>
-                             {product.estado === 'true' ? 'Activo' : product.estado}
-                           </div>
-                        </td>
-
-                        <td className="px-6 py-5">
-                          <div className="flex items-center justify-center gap-2">
-                            <button 
-                              onClick={() => handleEdit(product)}
-                              className="p-2.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-all border border-transparent hover:border-orange-200"
-                              title="Editar"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => handleDelete(product)}
-                              className="p-2.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-200"
-                              title="Desactivar"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-4 border-t-2 border-gray-200 flex items-center justify-between">
-               <span className="text-sm text-gray-600">
-                 Mostrando <span className="font-bold text-gray-900">{filteredProducts.length}</span> de <span className="font-bold text-gray-900">{products.length}</span> productos
-               </span>
-               <div className="flex gap-2">
-                 <button className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 font-medium transition-all" disabled>Anterior</button>
-                 <button className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 font-medium transition-all" disabled>Siguiente</button>
-               </div>
-            </div>
-
-          </div>
-        </>
-      )}
-
-      {activeTab === 'proveedores' && (
-        <div className="p-16 text-center bg-white rounded-2xl border-2 border-dashed border-gray-300">
-          <Truck className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Módulo de Proveedores</h3>
-          <p className="text-gray-500">Aquí irá la tabla de gestión de proveedores.</p>
-        </div>
-      )}
-
-      {activeTab === 'categorias' && (
-        <div className="p-16 text-center bg-white rounded-2xl border-2 border-dashed border-gray-300">
-          <Tags className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Módulo de Categorías</h3>
-          <p className="text-gray-500">Aquí podrás crear y editar las categorías de productos.</p>
-        </div>
-      )}
+      {/* CONTENIDO DE TABS */}
+      {activeTab === 'inventario' && <InventoryTab />}
+      {activeTab === 'categorias' && <CategoriesTab />}
+      {activeTab === 'proveedores' && <ProvidersTab />}
+      
+      </div>
     </div>
   )
 }

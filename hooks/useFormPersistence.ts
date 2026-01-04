@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 /**
  * Hook personalizado para persistir formularios en localStorage
  * Permite que los datos del formulario se mantengan aunque el usuario cambie de ventana
+ * Ahora con debouncing para mejor rendimiento
  */
 export function useFormPersistence<T extends Record<string, any>>(
   key: string,
-  initialState: T
+  initialState: T,
+  debounceMs: number = 500 // Espera 500ms por defecto antes de guardar
 ) {
   // Estado del formulario
   const [formData, setFormData] = useState<T>(() => {
@@ -24,16 +26,34 @@ export function useFormPersistence<T extends Record<string, any>>(
     return initialState
   })
 
-  // Guardar en localStorage cada vez que cambia el formulario
+  // Ref para el timeout de debouncing
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Guardar en localStorage con debouncing
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(key, JSON.stringify(formData))
-      } catch (error) {
-        console.error('Error al guardar datos del formulario en localStorage:', error)
+    // Limpiar el timeout anterior si existe
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+    }
+
+    // Crear nuevo timeout para guardar después del delay
+    timeoutRef.current = setTimeout(() => {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(key, JSON.stringify(formData))
+        } catch (error) {
+          console.error('Error al guardar datos del formulario en localStorage:', error)
+        }
+      }
+    }, debounceMs)
+
+    // Cleanup: cancelar el timeout si el componente se desmonta o formData cambia
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
       }
     }
-  }, [formData, key])
+  }, [formData, key, debounceMs])
 
   // Función para limpiar el formulario
   const clearForm = () => {
