@@ -544,7 +544,7 @@ export default function ClientsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Límite de Crédito (Bs)</label>
+                  <label className="block text-sm font-semibold text-gray-900">Límite de Crédito (Bs)</label>
                   <input
                     type="number"
                     name="credit_limit"
@@ -579,7 +579,7 @@ export default function ClientsPage() {
                     </div>
                     
                     <div className="flex gap-4 items-center">
-                         <div className="flex-1 text-sm text-gray-700 font-mono bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm">
+                         <div className="flex-1 text-sm text-black font-mono bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm">
                             Lat: {formData.latitude?.toFixed(6) || '---'}<br/>
                             Lon: {formData.longitude?.toFixed(6) || '---'}
                          </div>

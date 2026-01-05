@@ -20,6 +20,7 @@ export default function EmployeesTab() {
   const [selectedEmployee, setSelectedEmployee] = useState<string>('ALL')
   const [dateRange, setDateRange] = useState({ start: '2025-01-01', end: '2026-12-31' })
   const [orders, setOrders] = useState<Order[]>([])
+  const [visits, setVisits] = useState<any[]>([])
 
   // --- Carga Inicial ---
   useEffect(() => {
@@ -90,9 +91,38 @@ export default function EmployeesTab() {
         console.log(msg)
         setOrders((data as any) || [])
         
+        // Query 2: Visitas para gráfico de eficiencia
+        let visitsQuery = supabase
+          .from('visits')
+          .select(`
+            id,
+            start_time,
+            outcome,
+            seller_id,
+            notes
+          `)
+          .gte('start_time', dateRange.start)
+          .lte('start_time', dateRange.end)
+          .order('start_time', { ascending: false })
+
+        // Si no es "ALL", filtrar por empleado específico
+        if (selectedEmployee !== 'ALL') {
+          visitsQuery = visitsQuery.eq('seller_id', selectedEmployee)
+        }
+
+        const { data: visitsData, error: visitsError } = await visitsQuery
+
+        if (visitsError) {
+          console.error('❌ Error cargando visitas:', visitsError)
+        } else {
+          console.log(`✅ Visitas cargadas: ${visitsData?.length || 0} visitas`)
+          setVisits(visitsData || [])
+        }
+        
       } catch (error) {
         console.error('Error fetching employee orders:', error)
         setOrders([])
+        setVisits([])
       } finally {
         setLoading(false)
       }
@@ -183,7 +213,7 @@ export default function EmployeesTab() {
           chartData={chartData}
           kpis={kpis}
         />
-        <PerformanceEvolution orders={orders} />
+        <PerformanceEvolution visits={visits} />
       </div>
 
       {/* 5. TABLA DETALLADA */}

@@ -1,5 +1,5 @@
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import type { ChartDataItem, KPIs } from '../../types/employee-reports'
 
@@ -44,9 +44,13 @@ export default function EmployeeCharts({ chartData, kpis }: EmployeeChartsProps)
               contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
               formatter={(value: number | undefined) => value !== undefined ? [formatMoney(value), ''] : ['', '']}
             />
+            <Legend 
+              wrapperStyle={{ paddingTop: '20px' }}
+              iconType="rect"
+            />
             <Bar 
               dataKey="contado" 
-              name="Contado" 
+              name="Ventas al Contado" 
               stackId="a" 
               fill={COLORS.primary} 
               radius={[0, 0, 4, 4]} 
@@ -54,7 +58,7 @@ export default function EmployeeCharts({ chartData, kpis }: EmployeeChartsProps)
             />
             <Bar 
               dataKey="credito" 
-              name="Crédito" 
+              name="Ventas a Crédito" 
               stackId="a" 
               fill={COLORS.accent} 
               radius={[4, 4, 0, 0]} 

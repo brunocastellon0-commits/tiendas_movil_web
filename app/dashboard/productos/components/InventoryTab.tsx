@@ -38,10 +38,24 @@ type Product = {
   nombre_producto: string
   estado: string
   precio_base_venta: number
+  unidad_base_venta: string
   stock_actual: number
   stock_min: number
   stock_max: number
-  unidad_base_venta: string
+  observacion: string | null
+  extra_1: string | null
+  comision: number | null
+  comision2: number | null
+  tipo: string | null
+  peso_bruto: number | null
+  activo: boolean | null
+  kg_unidad: number | null
+  descuento_volumen: boolean | null
+  descuento_temporada: boolean | null
+  precios_volumen: boolean | null
+  categoria_id: string | null
+  proveedor_id: string | null
+  created_at?: string
   categoria: Category | null
   proveedor: Provider | null
 }
@@ -123,7 +137,18 @@ export default function InventoryTab() {
     stock_min: '',
     stock_max: '',
     unidad_base_venta: 'unidad',
-    estado: 'Activo'
+    estado: 'Activo',
+    observacion: '',
+    extra_1: '',
+    comision: '',
+    comision2: '',
+    tipo: '',
+    peso_bruto: '',
+    activo: 'true',
+    kg_unidad: '',
+    descuento_volumen: 'false',
+    descuento_temporada: 'false',
+    precios_volumen: 'false'
   })
 
   useEffect(() => {
@@ -234,7 +259,18 @@ export default function InventoryTab() {
             stock_min: parseInt(formData.stock_min) || 0,
             stock_max: parseInt(formData.stock_max) || 100,
             unidad_base_venta: formData.unidad_base_venta,
-            estado: formData.estado
+            estado: formData.estado,
+            observacion: formData.observacion || null,
+            extra_1: formData.extra_1 || null,
+            comision: formData.comision ? parseFloat(formData.comision) : null,
+            comision2: formData.comision2 ? parseFloat(formData.comision2) : null,
+            tipo: formData.tipo || null,
+            peso_bruto: formData.peso_bruto ? parseFloat(formData.peso_bruto) : null,
+            activo: formData.activo === 'true',
+            kg_unidad: formData.kg_unidad ? parseFloat(formData.kg_unidad) : null,
+            descuento_volumen: formData.descuento_volumen === 'true',
+            descuento_temporada: formData.descuento_temporada === 'true',
+            precios_volumen: formData.precios_volumen === 'true'
           })
           .eq('id', editingId)
 
@@ -266,7 +302,18 @@ export default function InventoryTab() {
             stock_min: parseInt(formData.stock_min) || 0,
             stock_max: parseInt(formData.stock_max) || 100,
             unidad_base_venta: formData.unidad_base_venta,
-            estado: formData.estado
+            estado: formData.estado,
+            observacion: formData.observacion || null,
+            extra_1: formData.extra_1 || null,
+            comision: formData.comision ? parseFloat(formData.comision) : null,
+            comision2: formData.comision2 ? parseFloat(formData.comision2) : null,
+            tipo: formData.tipo || null,
+            peso_bruto: formData.peso_bruto ? parseFloat(formData.peso_bruto) : null,
+            activo: formData.activo === 'true',
+            kg_unidad: formData.kg_unidad ? parseFloat(formData.kg_unidad) : null,
+            descuento_volumen: formData.descuento_volumen === 'true',
+            descuento_temporada: formData.descuento_temporada === 'true',
+            precios_volumen: formData.precios_volumen === 'true'
           }])
           .select(`
             *,
@@ -318,7 +365,18 @@ export default function InventoryTab() {
       stock_min: product.stock_min.toString(),
       stock_max: product.stock_max.toString(),
       unidad_base_venta: product.unidad_base_venta,
-      estado: product.estado
+      estado: product.estado,
+      observacion: product.observacion || '',
+      extra_1: product.extra_1 || '',
+      comision: product.comision?.toString() || '',
+      comision2: product.comision2?.toString() || '',
+      tipo: product.tipo || '',
+      peso_bruto: product.peso_bruto?.toString() || '',
+      activo: product.activo?.toString() || 'true',
+      kg_unidad: product.kg_unidad?.toString() || '',
+      descuento_volumen: product.descuento_volumen?.toString() || 'false',
+      descuento_temporada: product.descuento_temporada?.toString() || 'false',
+      precios_volumen: product.precios_volumen?.toString() || 'false'
     })
     setIsEditing(true)
     setEditingId(product.id)
@@ -609,6 +667,164 @@ or</label>
               </div>
             </div>
 
+            {/* Información Adicional */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b-2 border-purple-100">
+                <div className="w-1 h-6 bg-purple-600 rounded-full"></div>
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+                  Información Adicional
+                </h3>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Tipo</label>
+                  <input
+                    type="text"
+                    name="tipo"
+                    value={formData.tipo}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    placeholder="Ej: Bebida, Snack..."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Comisión (%)</label>
+                  <input
+                    type="number"
+                    name="comision"
+                    value={formData.comision}
+                    onChange={handleChange}
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    placeholder="5.00"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Kg por Unidad</label>
+                  <input
+                    type="number"
+                    name="kg_unidad"
+                    value={formData.kg_unidad}
+                    onChange={handleChange}
+                    step="0.001"
+                    min="0"
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    placeholder="0.500"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Comisión 2 (%)</label>
+                  <input
+                    type="number"
+                    name="comision2"
+                    value={formData.comision2}
+                    onChange={handleChange}
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    placeholder="5.00"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Peso Bruto (Kg)</label>
+                  <input
+                    type="number"
+                    name="peso_bruto"
+                    value={formData.peso_bruto}
+                    onChange={handleChange}
+                    step="0.01"
+                    min="0"
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    placeholder="50.00"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Precios por Volumen</label>
+                  <select
+                    name="precios_volumen"
+                    value={formData.precios_volumen}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  >
+                    <option value="true">Sí</option>
+                    <option value="false">No</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Descuento por Volumen</label>
+                  <select
+                    name="descuento_volumen"
+                    value={formData.descuento_volumen}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  >
+                    <option value="true">Sí</option>
+                    <option value="false">No</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Descuento Temporada</label>
+                  <select
+                    name="descuento_temporada"
+                    value={formData.descuento_temporada}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  >
+                    <option value="true">Sí</option>
+                    <option value="false">No</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700">Observaciones</label>
+                  <input
+                    type="text"
+                    name="observacion"
+                    value={formData.observacion}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    placeholder="Notas adicionales sobre el producto..."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Campo Extra 1</label>
+                  <input
+                    type="text"
+                    name="extra_1"
+                    value={formData.extra_1}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    placeholder="Información adicional"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700">Estado Activo</label>
+                  <select
+                    name="activo"
+                    value={formData.activo}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  >
+                    <option value="true">Sí</option>
+                    <option value="false">No</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             {/* Botones */}
             <div className="flex gap-4 pt-6 border-t-2 border-gray-100">
               <button
@@ -673,18 +889,28 @@ or</label>
           <table className="w-full">
             <thead>
               <tr className="bg-gradient-to-r from-gray-50 to-slate-50 border-b-2 border-gray-200">
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Producto</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Categoría</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Stock</th>
-                <th className="px-6 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Precio</th>
-                <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Estado</th>
-                <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Acciones</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Producto</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Categoría</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Proveedor</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Stock</th>
+                <th className="px-4 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Precio Base</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tipo</th>
+                <th className="px-4 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Comisión %</th>
+                <th className="px-4 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Kg/Unidad</th>
+                <th className="px-4 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Peso Límite</th>
+                <th className="px-4 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Precio Vol.</th>
+                <th className="px-4 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Desc. Vol. %</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Observaciones</th>
+                <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Extra 1</th>
+                <th className="px-4 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Activo</th>
+                <th className="px-4 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Estado</th>
+                <th className="px-4 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center">
+                  <td colSpan={16} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center justify-center gap-3">
                       <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
                       <p className="text-gray-600 font-medium">Cargando inventario...</p>
@@ -693,7 +919,7 @@ or</label>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center text-gray-500">
+                  <td colSpan={16} className="px-6 py-16 text-center text-gray-500">
                     No se encontraron productos
                   </td>
                 </tr>
@@ -701,7 +927,8 @@ or</label>
                 filteredProducts.map((product) => (
                   <tr key={product.id} className="hover:bg-gradient-to-r hover:from-green-50/30 hover:to-emerald-50/30 transition-all">
                     
-                    <td className="px-6 py-5">
+                    {/* Producto */}
+                    <td className="px-4 py-4">
                       <div className="flex flex-col gap-1">
                         <span className="text-sm font-bold text-gray-900">
                           {product.nombre_producto}
@@ -713,17 +940,30 @@ or</label>
                       </div>
                     </td>
 
-                    <td className="px-6 py-5">
+                    {/* Categoría */}
+                    <td className="px-4 py-4">
                       {product.categoria ? (
-                        <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
+                        <span className="inline-flex items-center px-2 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
                           {product.categoria.nombre_categoria}
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-400 italic">Sin categoría</span>
+                        <span className="text-xs text-gray-400 italic">-</span>
                       )}
                     </td>
 
-                    <td className="px-6 py-5">
+                    {/* Proveedor */}
+                    <td className="px-4 py-4">
+                      {product.proveedor ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                          {product.proveedor.nombre}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">-</span>
+                      )}
+                    </td>
+
+                    {/* Stock */}
+                    <td className="px-4 py-4">
                       <StockCell 
                         current={product.stock_actual} 
                         min={product.stock_min} 
@@ -731,8 +971,9 @@ or</label>
                       />
                     </td>
 
-                    <td className="px-6 py-5 text-right">
-                      <div className="text-base font-bold text-gray-900">
+                    {/* Precio Base */}
+                    <td className="px-4 py-4 text-right">
+                      <div className="text-sm font-bold text-gray-900">
                         {formatCurrency(product.precio_base_venta)}
                       </div>
                       <div className="text-[10px] text-gray-500">
@@ -740,8 +981,79 @@ or</label>
                       </div>
                     </td>
 
-                    <td className="px-6 py-5 text-center">
-                       <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                    {/* Tipo */}
+                    <td className="px-4 py-4">
+                      <span className="text-xs text-gray-700">
+                        {product.tipo || '-'}
+                      </span>
+                    </td>
+
+                    {/* Comisión */}
+                    <td className="px-4 py-4 text-right">
+                      <span className="text-xs text-gray-700 font-medium">
+                        {product.comision ? `${product.comision}%` : '-'}
+                      </span>
+                    </td>
+
+                    {/* Kg/Unidad */}
+                    <td className="px-4 py-4 text-right">
+                      <span className="text-xs text-gray-700">
+                        {product.kg_unidad ? `${product.kg_unidad} kg` : '-'}
+                      </span>
+                    </td>
+
+                    {/* Peso Límite */}
+                    <td className="px-4 py-4 text-right">
+                      <span className="text-xs text-gray-700">
+                        {product.peso_bruto ? `${product.peso_bruto} kg` : '-'}
+                      </span>
+                    </td>
+
+                    {/* Precio Volumen */}
+                    <td className="px-4 py-4 text-center">
+                      <span className={`text-xs font-medium px-2 py-1 rounded ${product.precios_volumen ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {product.precios_volumen ? 'Sí' : 'No'}
+                      </span>
+                    </td>
+
+                    {/* Descuento Volumen */}
+                    <td className="px-4 py-4 text-center">
+                      <span className={`text-xs font-medium px-2 py-1 rounded ${product.descuento_volumen ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {product.descuento_volumen ? 'Sí' : 'No'}
+                      </span>
+                    </td>
+
+                    {/* Observaciones */}
+                    <td className="px-4 py-4">
+                      <span className="text-xs text-gray-600 line-clamp-2" title={product.observacion || ''}>
+                        {product.observacion || '-'}
+                      </span>
+                    </td>
+
+                    {/* Extra 1 */}
+                    <td className="px-4 py-4">
+                      <span className="text-xs text-gray-600">
+                        {product.extra_1 || '-'}
+                      </span>
+                    </td>
+
+                    {/* Activo */}
+                    <td className="px-4 py-4 text-center">
+                      <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold border ${
+                        product.activo 
+                          ? 'bg-emerald-100 text-emerald-700 border-emerald-200' 
+                          : 'bg-gray-100 text-gray-500 border-gray-200'
+                      }`}>
+                        <div className={`w-2 h-2 rounded-full ${
+                          product.activo ? 'bg-emerald-500' : 'bg-gray-400'
+                        }`}></div>
+                        {product.activo ? 'Sí' : 'No'}
+                      </div>
+                    </td>
+
+                    {/* Estado */}
+                    <td className="px-4 py-4 text-center">
+                       <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold border ${
                          product.estado === 'Activo' || product.estado === 'true'
                            ? 'bg-green-100 text-green-700 border-green-200' 
                            : 'bg-gray-100 text-gray-500 border-gray-200'
@@ -753,18 +1065,19 @@ or</label>
                        </div>
                     </td>
 
-                    <td className="px-6 py-5">
+                    {/* Acciones */}
+                    <td className="px-4 py-4">
                       <div className="flex items-center justify-center gap-2">
                         <button 
                           onClick={() => handleEdit(product)}
-                          className="p-2.5 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-all border border-transparent hover:border-orange-200"
+                          className="p-2 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-all border border-transparent hover:border-orange-200"
                           title="Editar"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button 
                           onClick={() => handleDelete(product)}
-                          className="p-2.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-200"
+                          className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-200"
                           title="Desactivar"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -793,3 +1106,4 @@ or</label>
     </>
   )
 }
+

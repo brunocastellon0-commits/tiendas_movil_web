@@ -39,6 +39,7 @@ export default function EmployeesManagement() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [mounted, setMounted] = useState(false)
   
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -57,6 +58,10 @@ export default function EmployeesManagement() {
     password: '',
     job_title: 'Preventista'
   })
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     const fetchEmployees = async () => {
@@ -163,11 +168,18 @@ export default function EmployeesManagement() {
         })
 
         if (functionError) {
+          if (data?.error) {
+            throw new Error(data.error)
+          }
           throw new Error(functionError.message || 'Error al conectar con el servidor')
         }
 
         if (data?.error) {
           throw new Error(data.error)
+        }
+
+        if (!data?.user) {
+          throw new Error('No se recibió información del usuario creado')
         }
 
         setFormSuccess(true)
@@ -188,10 +200,8 @@ export default function EmployeesManagement() {
       }, 3000)
 
     } catch (err: any) {
-      console.error('Error guardando empleado:', err)
-      
       let errorMessage = 'Ocurrió un error inesperado'
-      if (err.message.includes('duplicate') || err.message.includes('already exists')) {
+      if (err.message.includes('duplicate') || err.message.includes('already exists') || err.message.includes('ya existe')) {
         errorMessage = 'Este correo electrónico ya está registrado'
       } else if (err.message.includes('network') || err.message.includes('fetch')) {
         errorMessage = 'Error de conexión. Verifica tu internet'
@@ -229,13 +239,13 @@ export default function EmployeesManagement() {
     try {
       const { error } = await supabase
         .from('employees')
-        .update({ status: 'Inactivo' })
+        .update({ status: 'Deshabilitado' })
         .eq('id', employee.id)
 
       if (error) throw error
 
       setEmployees(employees.map(emp => 
-        emp.id === employee.id ? { ...emp, status: 'Inactivo' } : emp
+        emp.id === employee.id ? { ...emp, status: 'Deshabilitado' } : emp
       ))
 
     } catch (err: any) {
@@ -523,7 +533,7 @@ export default function EmployeesManagement() {
                       type="button"
                       onClick={() => setFormData({ ...formData, job_title: 'Preventista' })}
                       className={`flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 transition-all duration-300 shadow-lg hover:shadow-xl ${
-                        formData.job_title === 'Preventista'
+                        (mounted ? formData.job_title : 'Preventista') === 'Preventista'
                           ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white border-green-400 scale-105'
                           : 'bg-white text-gray-700 border-gray-200 hover:border-green-400 hover:bg-green-50'
                       }`}
@@ -537,7 +547,7 @@ export default function EmployeesManagement() {
                       type="button"
                       onClick={() => setFormData({ ...formData, job_title: 'Administrador' })}
                       className={`flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 transition-all duration-300 shadow-lg hover:shadow-xl ${
-                        formData.job_title === 'Administrador'
+                        (mounted ? formData.job_title : 'Preventista') === 'Administrador'
                           ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white border-red-400 scale-105'
                           : 'bg-white text-gray-700 border-gray-200 hover:border-red-400 hover:bg-red-50'
                       }`}

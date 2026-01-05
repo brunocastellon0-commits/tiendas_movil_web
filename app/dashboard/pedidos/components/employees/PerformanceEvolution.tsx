@@ -4,36 +4,44 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { TrendingUp } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import type { Order } from '../../types/employee-reports'
 
-interface PerformanceEvolutionProps {
-  orders: Order[]
+interface Visit {
+  id: string
+  start_time: string
+  outcome: 'sale' | 'no_sale' | 'store_closed'
+  seller_id: string
+  notes?: string
 }
 
-export default function PerformanceEvolution({ orders }: PerformanceEvolutionProps) {
-  // Agrupar pedidos por día
-  const evolutionData = orders.reduce((acc, order) => {
-    const date = format(new Date(order.fecha_pedido), 'dd/MM', { locale: es })
+interface PerformanceEvolutionProps {
+  visits: Visit[]
+}
+
+export default function PerformanceEvolution({ visits }: PerformanceEvolutionProps) {
+  // Agrupar visitas por día según outcome
+  const evolutionData = visits.reduce((acc, visit) => {
+    const date = format(new Date(visit.start_time), 'dd/MM', { locale: es })
     
     if (!acc[date]) {
       acc[date] = {
         date,
-        entregados: 0,
-        pendientes: 0,
-        cancelados: 0
+        conVenta: 0,
+        sinVenta: 0,
+        tiendasCerradas: 0
       }
     }
     
-    if (order.estado === 'Entregado') {
-      acc[date].entregados += 1
-    } else if (order.estado === 'Pendiente' || order.estado === 'Aprobado') {
-      acc[date].pendientes += 1
-    } else if (order.estado === 'Anulado') {
-      acc[date].cancelados += 1
+    // Clasificación basada en el campo outcome de la visita
+    if (visit.outcome === 'sale') {
+      acc[date].conVenta += 1
+    } else if (visit.outcome === 'no_sale') {
+      acc[date].sinVenta += 1
+    } else if (visit.outcome === 'store_closed') {
+      acc[date].tiendasCerradas += 1
     }
     
     return acc
-  }, {} as Record<string, { date: string; entregados: number; pendientes: number; cancelados: number }>)
+  }, {} as Record<string, { date: string; conVenta: number; sinVenta: number; tiendasCerradas: number }>)
 
   const chartData = Object.values(evolutionData).slice(-14) // Últimas 2 semanas
 
@@ -77,10 +85,10 @@ export default function PerformanceEvolution({ orders }: PerformanceEvolutionPro
             iconType="line"
           />
           
-          {/* Línea verde: Visitas con Venta (Entregados) */}
+          {/* Línea verde: Visitas con Venta */}
           <Line 
             type="monotone" 
-            dataKey="entregados" 
+            dataKey="conVenta" 
             stroke="#10b981" 
             strokeWidth={3}
             name="Visita con Venta"
@@ -88,20 +96,20 @@ export default function PerformanceEvolution({ orders }: PerformanceEvolutionPro
             activeDot={{ r: 6 }}
           />
           
-          {/* Línea naranja: Sin Venta (Pendientes) */}
+          {/* Línea naranja: Sin Venta */}
           <Line 
             type="monotone" 
-            dataKey="pendientes" 
+            dataKey="sinVenta" 
             stroke="#f59e0b" 
             strokeWidth={2}
             name="Sin Venta"
             dot={{ fill: '#f59e0b', r: 3 }}
           />
           
-          {/* Línea gris punteada: Tiendas Cerradas (Cancelados) */}
+          {/* Línea gris punteada: Tiendas Cerradas */}
           <Line 
             type="monotone" 
-            dataKey="cancelados" 
+            dataKey="tiendasCerradas" 
             stroke="#9ca3af" 
             strokeWidth={2}
             strokeDasharray="5 5"
@@ -111,26 +119,26 @@ export default function PerformanceEvolution({ orders }: PerformanceEvolutionPro
         </LineChart>
       </ResponsiveContainer>
 
-      {/* Resumen de últimos 14 días */}
+      {/* Resumen de últimas 14 días */}
       <div className="mt-6 grid grid-cols-3 gap-4">
         <div className="p-3 bg-green-50 rounded-lg border border-green-200">
           <p className="text-xs font-semibold text-green-600 mb-1">VISITA CON VENTA</p>
           <p className="text-2xl font-bold text-green-700">
-            {orders.filter(o => o.estado === 'Entregado').length}
+            {visits.filter(v => v.outcome === 'sale').length}
           </p>
         </div>
         
         <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
           <p className="text-xs font-semibold text-orange-600 mb-1">SIN VENTA</p>
           <p className="text-2xl font-bold text-orange-700">
-            {orders.filter(o => o.estado === 'Pendiente' || o.estado === 'Aprobado').length}
+            {visits.filter(v => v.outcome === 'no_sale').length}
           </p>
         </div>
         
         <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
           <p className="text-xs font-semibold text-gray-600 mb-1">TIENDAS CERRADAS</p>
           <p className="text-2xl font-bold text-gray-700">
-            {orders.filter(o => o.estado === 'Anulado').length}
+            {visits.filter(v => v.outcome === 'store_closed').length}
           </p>
         </div>
       </div>
