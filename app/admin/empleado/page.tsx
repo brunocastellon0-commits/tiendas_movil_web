@@ -32,11 +32,21 @@ type Employee = {
   created_at: string
 }
 
+type Zone = {
+  id: string
+  codigo_zona: string
+  descripcion: string
+  territorio: string
+  estado: string
+  vendedor_id: string | null
+}
+
 export default function EmployeesManagement() {
   const router = useRouter()
   const supabase = createClient()
   
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [zones, setZones] = useState<Zone[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [mounted, setMounted] = useState(false)
@@ -56,7 +66,9 @@ export default function EmployeesManagement() {
     email: '',
     phone: '',
     password: '',
-    job_title: 'Preventista'
+
+    job_title: 'Preventista',
+    zone_id: ''
   })
 
   useEffect(() => {
@@ -64,22 +76,25 @@ export default function EmployeesManagement() {
   }, [])
 
   useEffect(() => {
-    const fetchEmployees = async () => {
+    const fetchData = async () => {
       try {
-        const { data, error } = await supabase
-          .from('employees')
-          .select('*')
-          .order('created_at', { ascending: false })
+        const [employeesResponse, zonesResponse] = await Promise.all([
+          supabase.from('employees').select('*').order('created_at', { ascending: false }),
+          supabase.from('zonas').select('*').order('codigo_zona', { ascending: true })
+        ])
         
-        if (error) throw error
-        if (data) setEmployees(data as any)
+        if (employeesResponse.error) throw employeesResponse.error
+        if (zonesResponse.error) throw zonesResponse.error
+        
+        if (employeesResponse.data) setEmployees(employeesResponse.data as any)
+        if (zonesResponse.data) setZones(zonesResponse.data as any)
       } catch (error) {
-        console.error('Error cargando empleados:', error)
+        console.error('Error cargando datos:', error)
       } finally {
         setLoading(false)
       }
     }
-    fetchEmployees()
+    fetchData()
   }, [])
 
   const filteredEmployees = employees.filter(emp => 
@@ -145,6 +160,29 @@ export default function EmployeesManagement() {
             job_title: formData.job_title
           })
           .eq('id', editingId)
+          
+        if (error) throw error
+
+        // Update Zone Assignment
+        if ('zone_id' in formData) {
+          // First, clear any existing zone assignment for this employee
+          await supabase
+            .from('zonas')
+            .update({ vendedor_id: null })
+            .eq('vendedor_id', editingId)
+
+          // If a new zone is selected, assign it
+          if (formData.zone_id) {
+            await supabase
+              .from('zonas')
+              .update({ vendedor_id: editingId })
+              .eq('id', formData.zone_id)
+          }
+          
+          // Refresh zones to reflect changes
+          const { data: updatedZones } = await supabase.from('zonas').select('*').order('codigo_zona', { ascending: true })
+          if (updatedZones) setZones(updatedZones as any)
+        }
 
         if (error) throw error
 
@@ -180,6 +218,20 @@ export default function EmployeesManagement() {
 
         if (!data?.user) {
           throw new Error('No se recibió información del usuario creado')
+        }
+        
+        const newEmployeeId = data.user.id
+        
+        // Handle Zone Assignment for New Employee
+        if (formData.zone_id) {
+           await supabase
+            .from('zonas')
+            .update({ vendedor_id: newEmployeeId })
+            .eq('id', formData.zone_id)
+            
+           // Refresh zones
+           const { data: updatedZones } = await supabase.from('zonas').select('*').order('codigo_zona', { ascending: true })
+           if (updatedZones) setZones(updatedZones as any)
         }
 
         setFormSuccess(true)
@@ -221,7 +273,9 @@ export default function EmployeesManagement() {
       email: employee.email,
       phone: employee.phone,
       password: '',
-      job_title: employee.job_title || 'Preventista'
+
+      job_title: employee.job_title || 'Preventista',
+      zone_id: zones.find(z => z.vendedor_id === employee.id)?.id || ''
     })
     setIsEditing(true)
     setEditingId(employee.id)
@@ -342,7 +396,7 @@ export default function EmployeesManagement() {
       </div>
 
       {/* KPIs - Verde vibrante con blanco */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
         
         {/* Total Empleados - Verde principal */}
         <div className="group relative bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-green-400 hover:scale-105">
@@ -361,22 +415,7 @@ export default function EmployeesManagement() {
           </div>
         </div>
 
-        {/* Preventistas - Verde claro vibrante */}
-        <div className="group relative bg-gradient-to-br from-emerald-400 via-green-400 to-teal-500 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-emerald-300 hover:scale-105">
-          <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
-                <Briefcase className="w-7 h-7 text-white" />
-              </div>
-              <span className="text-xs font-bold bg-white text-emerald-600 px-4 py-1.5 rounded-full shadow-md">
-                VENTAS
-              </span>
-            </div>
-            <h3 className="text-4xl font-black mb-1 text-white">{totalPreventistas}</h3>
-            <p className="text-sm text-emerald-50 font-semibold">Preventistas en ruta</p>
-          </div>
-        </div>
+
 
         {/* Admins - Rojo acento vibrante */}
         <div className="group relative bg-gradient-to-br from-red-500 via-red-600 to-rose-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-red-400 hover:scale-105">
@@ -576,6 +615,57 @@ export default function EmployeesManagement() {
                   </div>
                 )}
               </div>
+
+              {/* Zona (Visible solo para Preventistas) */}
+              {(mounted && formData.job_title === 'Preventista') && (
+                <div className="space-y-5 pt-4">
+                  <div className="flex items-center gap-3 pb-3 border-b-4 border-green-500">
+                    <div className="w-2 h-8 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full shadow-lg"></div>
+                    <h3 className="text-base font-black text-gray-900 uppercase tracking-wider">
+                      Asignación de Zona
+                    </h3>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="block text-sm font-bold text-gray-800">
+                      Seleccionar Zona
+                    </label>
+                    <select
+                      name="zone_id"
+                      value={formData.zone_id || ''}
+                      onChange={(e) => setFormData({ ...formData, zone_id: e.target.value })}
+                      className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300 bg-white"
+                    >
+                      <option value="">-- Sin asignar --</option>
+                      {zones.map((zone) => {
+                        const isAssigned = zone.vendedor_id !== null
+                        const assignedToCurrent = zone.vendedor_id === (editingId || '')
+                        
+                        // Show option if: Not assigned, OR Assigned to current employee being edited
+                        if (!isAssigned || assignedToCurrent) {
+                          return (
+                            <option key={zone.id} value={zone.id}>
+                              {zone.codigo_zona} - {zone.descripcion}
+                            </option>
+                          )
+                        } else {
+                           // Optional: Show occupied zones as disabled?
+                           // Find who has it
+                           const owner = employees.find(e => e.id === zone.vendedor_id)
+                           return (
+                             <option key={zone.id} value={zone.id} disabled className="text-gray-400">
+                               {zone.codigo_zona} - {zone.descripcion} (Asignado a {owner?.full_name || 'Otro'})
+                             </option>
+                           )
+                        }
+                      })}
+                    </select>
+                    <p className="text-xs text-gray-500 font-medium">
+                      Asigna una zona de ventas específica a este empleado.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Botones */}

@@ -3,11 +3,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { 
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend
 } from 'recharts'
 import { 
   TrendingUp, AlertOctagon, Wallet, Users, ArrowUpRight, 
-  MoreHorizontal, FileDown, Search, Filter
+  MoreHorizontal, FileDown, Search, Filter, Award, AlertTriangle, Info
 } from 'lucide-react'
 
 // --- TIPO DE DATOS ---
@@ -26,15 +26,25 @@ type ParetoCliente = {
   alerta_riesgo_pareto: boolean
 }
 
-// --- CONFIGURACIÓN DE ESTILO (Theme System) ---
-const THEME = {
-  colors: {
-    primary: '#0F172A', // Slate 900
-    risk: '#EF4444',    // Red 500
-    warning: '#F59E0B', // Amber 500
-    success: '#10B981', // Emerald 500
-    info: '#3B82F6',    // Blue 500
-    muted: '#64748B'    // Slate 500
+// --- CONFIGURACIÓN DE COLORES POR CLASIFICACIÓN ---
+const CLASIFICACION_COLORS = {
+  A: {
+    bg: '#10B981',      // Emerald 500 - Verde fuerte
+    light: '#D1FAE5',   // Emerald 100
+    border: '#059669',  // Emerald 600
+    text: '#065F46'     // Emerald 800
+  },
+  B: {
+    bg: '#F59E0B',      // Amber 500 - Naranja
+    light: '#FEF3C7',   // Amber 100
+    border: '#D97706',  // Amber 600
+    text: '#92400E'     // Amber 800
+  },
+  C: {
+    bg: '#64748B',      // Slate 500 - Gris
+    light: '#F1F5F9',   // Slate 100
+    border: '#475569',  // Slate 600
+    text: '#334155'     // Slate 700
   }
 }
 
@@ -144,67 +154,122 @@ export default function ParetoAnalysis() {
         />
       </div>
 
-      {/* 3. SECCIÓN PRINCIPAL: GRÁFICO + DATOS */}
+      {/* 3. SECCIÓN PRINCIPAL: GRÁFICO + LEYENDA */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* GRÁFICO (Ocupa 2 columnas) */}
+        {/* GRÁFICO DE BARRAS (Ocupa 2 columnas) */}
         <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="font-semibold text-slate-900">Concentración de Ventas (Top 20)</h3>
+            <h3 className="font-semibold text-slate-900">Top 20 Clientes por Ventas</h3>
             <div className="flex items-center gap-4 text-xs text-slate-500">
-               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-800"></span> Venta</span>
-               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"></span> % Acumulado</span>
+               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded" style={{backgroundColor: CLASIFICACION_COLORS.A.bg}}></span> Clase A</span>
+               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded" style={{backgroundColor: CLASIFICACION_COLORS.B.bg}}></span> Clase B</span>
+               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded" style={{backgroundColor: CLASIFICACION_COLORS.C.bg}}></span> Clase C</span>
             </div>
           </div>
-          <div className="h-[350px] w-full">
+          <div className="h-[400px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{top:10, right:10, left:0, bottom:0}}>
+              <BarChart data={chartData} margin={{top:10, right:10, left:0, bottom:60}}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                <XAxis dataKey="nombre_cliente" hide />
-                <YAxis yAxisId="left" orientation="left" tickFormatter={(v) => `${v/1000}k`} axisLine={false} tickLine={false} fontSize={12} stroke="#94A3B8" />
-                <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} fontSize={12} stroke="#94A3B8" />
+                <XAxis 
+                  dataKey="codigo_cliente" 
+                  angle={-45} 
+                  textAnchor="end" 
+                  height={80}
+                  fontSize={11}
+                  stroke="#94A3B8"
+                />
+                <YAxis 
+                  tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} 
+                  axisLine={false} 
+                  tickLine={false} 
+                  fontSize={12} 
+                  stroke="#94A3B8" 
+                />
                 <Tooltip 
                   cursor={{ fill: '#F1F5F9' }}
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                  formatter={(value: any, name?: string) => {
+                    if (name === 'monto_total') return [formatMoney(value), 'Venta Total']
+                    return [value, name || '']
+                  }}
+                  labelFormatter={(label) => `Cliente: ${label}`}
                 />
-                <Bar yAxisId="left" dataKey="monto_total" barSize={20} radius={[4, 4, 0, 0]}>
+                <Bar dataKey="monto_total" radius={[6, 6, 0, 0]}>
                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.clasificacion_abc === 'A' ? THEME.colors.primary : THEME.colors.muted} />
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={CLASIFICACION_COLORS[entry.clasificacion_abc].bg}
+                      />
                    ))}
                 </Bar>
-                <Line yAxisId="right" type="monotone" dataKey="pct_acumulado" stroke={THEME.colors.warning} strokeWidth={2} dot={false} />
-              </ComposedChart>
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* CONTROLES RÁPIDOS (Ocupa 1 columna) */}
-        <div className="bg-slate-900 p-6 rounded-xl shadow-lg text-white flex flex-col justify-between relative overflow-hidden">
+        {/* LEYENDA EXPLICATIVA (Ocupa 1 columna) */}
+        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-xl shadow-lg text-white flex flex-col justify-between relative overflow-hidden">
           <div className="relative z-10">
-            <h3 className="text-lg font-bold mb-1">Estrategia Comercial</h3>
-            <p className="text-slate-400 text-sm mb-6">Acciones recomendadas para esta semana.</p>
+            <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+              <Award className="w-5 h-5" />
+              Clasificación ABC
+            </h3>
+            <p className="text-emerald-100 text-sm mb-6">Entendiendo el análisis Pareto</p>
             
             <div className="space-y-4">
-              <div className="p-3 bg-white/10 rounded-lg backdrop-blur-sm">
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-amber-400 font-medium">Recuperación</span>
-                  <span className="text-xs text-slate-300">Alta Prioridad</span>
+              {/* Clase A */}
+              <div className="p-4 bg-white/15 rounded-lg backdrop-blur-sm border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-emerald-900" style={{backgroundColor: CLASIFICACION_COLORS.A.bg}}>
+                    A
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm">Clientes VIP</div>
+                    <div className="text-xs text-emerald-100">Top 20% - Generan 80% ingresos</div>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-300">Contactar a los <b>{stats.clientesRiesgo} clientes VIP</b> que no han comprado en el último mes.</p>
+                <p className="text-xs text-emerald-50 leading-relaxed">
+                  Clientes estratégicos de alto valor. Requieren atención prioritaria y seguimiento constante.
+                </p>
               </div>
 
-              <div className="p-3 bg-white/10 rounded-lg backdrop-blur-sm">
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-emerald-400 font-medium">Cross-selling</span>
-                  <span className="text-xs text-slate-300">Oportunidad</span>
+              {/* Clase B */}
+              <div className="p-4 bg-white/15 rounded-lg backdrop-blur-sm border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-amber-900" style={{backgroundColor: CLASIFICACION_COLORS.B.bg}}>
+                    B
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm">Clientes Regulares</div>
+                    <div className="text-xs text-emerald-100">30% siguientes - 15% ingresos</div>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-300">Ofrecer descuento por volumen a clientes B cerca de convertirse en A.</p>
+                <p className="text-xs text-emerald-50 leading-relaxed">
+                  Potencial de crecimiento. Oportunidad para convertirlos en clase A con estrategias adecuadas.
+                </p>
+              </div>
+
+              {/* Clase C */}
+              <div className="p-4 bg-white/15 rounded-lg backdrop-blur-sm border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-slate-100" style={{backgroundColor: CLASIFICACION_COLORS.C.bg}}>
+                    C
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm">Clientes Ocasionales</div>
+                    <div className="text-xs text-emerald-100">50% restante - 5% ingresos</div>
+                  </div>
+                </div>
+                <p className="text-xs text-emerald-50 leading-relaxed">
+                  Compras esporádicas. Evaluar rentabilidad y costos de atención.
+                </p>
               </div>
             </div>
           </div>
           
           {/* Decoración de fondo abstracta */}
-          <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-indigo-500 rounded-full blur-[80px] opacity-20"></div>
+          <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-teal-400 rounded-full blur-[80px] opacity-30"></div>
         </div>
       </div>
 
@@ -292,19 +357,25 @@ export default function ParetoAnalysis() {
                       </div>
                       <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                         <div 
-                          className={`h-full rounded-full ${cliente.clasificacion_abc === 'A' ? 'bg-emerald-500' : 'bg-amber-400'}`} 
-                          style={{ width: `${Math.min(cliente.pct_acumulado, 100)}%` }}
+                          className="h-full rounded-full transition-all" 
+                          style={{ 
+                            width: `${Math.min(cliente.pct_acumulado, 100)}%`,
+                            backgroundColor: CLASIFICACION_COLORS[cliente.clasificacion_abc].bg
+                          }}
                         ></div>
                       </div>
                     </div>
                   </td>
 
                   <td className="px-6 py-3 text-center">
-                    <span className={`
-                      inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold
-                      ${cliente.clasificacion_abc === 'A' ? 'bg-slate-900 text-white shadow-md shadow-slate-200' : 
-                        cliente.clasificacion_abc === 'B' ? 'bg-white border border-slate-200 text-slate-600' : 'bg-slate-100 text-slate-400'}
-                    `}>
+                    <span 
+                      className="inline-flex items-center justify-center w-10 h-10 rounded-lg text-sm font-bold shadow-sm"
+                      style={{
+                        backgroundColor: CLASIFICACION_COLORS[cliente.clasificacion_abc].light,
+                        color: CLASIFICACION_COLORS[cliente.clasificacion_abc].text,
+                        border: `2px solid ${CLASIFICACION_COLORS[cliente.clasificacion_abc].border}`
+                      }}
+                    >
                       {cliente.clasificacion_abc}
                     </span>
                   </td>

@@ -19,7 +19,7 @@ const menuItems = [
   { name: 'Empleados', href: '/admin/empleado', icon: Users },
   { name: 'Pedidos', href: '/dashboard/pedidos', icon: MapPin },
   { name: 'Productos', href: '/dashboard/productos', icon: Package },
-  { name: 'Reportes', href: '/dashboard/reportes', icon: Settings },
+  { name: 'Pareto', href: '/dashboard/reportes', icon: Settings },
   { name: 'Clientes', href: '/dashboard/clientes', icon: UserSquare2 },
   { name: 'Mapa', href: '/dashboard/mapa', icon: MapPin },
 ]
