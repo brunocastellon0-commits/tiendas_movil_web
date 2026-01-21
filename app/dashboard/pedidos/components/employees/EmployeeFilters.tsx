@@ -26,7 +26,7 @@ export default function EmployeeFilters({
             onChange={(e) => setSelectedEmployee(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg appearance-none focus:ring-2 focus:ring-green-500 outline-none font-medium text-gray-900"
           >
-            <option value="ALL">📊 Todos los Empleados</option>
+            <option value="ALL"> Todos los Empleados</option>
             {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
           </select>
           <Users className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />

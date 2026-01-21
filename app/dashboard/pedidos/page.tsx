@@ -20,13 +20,16 @@ import {
   Trash2,
   Save,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  Edit,
+  CheckCircle
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import Link from 'next/link'
 import EmployeesTab from './components/EmployeesTab'
 import ReportsTab from './components/ReportsTab'
+
 
 // --- 1. Tipos TypeScript (Basado en tus imágenes DB) ---
 
@@ -137,6 +140,18 @@ export default function OrdersPage() {
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState(false)
+  
+  // Estados para edición de pedidos
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editFormData, setEditFormData] = useState({
+    estado: '',
+    tipo_pago: '',
+    observacion: ''
+  })
+  const [editLoading, setEditLoading] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [editSuccess, setEditSuccess] = useState(false)
 
   // Carga Inicial
   useEffect(() => {
@@ -358,6 +373,74 @@ export default function OrdersPage() {
     }
   }
 
+  // Funciones para editar pedidos
+  const handleEditOrder = (order: Order) => {
+    setEditingOrder(order)
+    setEditFormData({
+      estado: order.estado,
+      tipo_pago: order.tipo_pago,
+      observacion: order.observacion || ''
+    })
+    setShowEditModal(true)
+    setEditError(null)
+    setEditSuccess(false)
+  }
+
+  const handleUpdateOrder = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!editingOrder) return
+
+    try {
+      setEditLoading(true)
+      setEditError(null)
+
+      // Actualizar el pedido
+      const { error: updateError } = await supabase
+        .from('pedidos')
+        .update({
+          estado: editFormData.estado,
+          tipo_pago: editFormData.tipo_pago,
+          observacion: editFormData.observacion || null
+        })
+        .eq('id', editingOrder.id)
+
+      if (updateError) throw updateError
+
+      // Recargar pedidos
+      const { data: ordersData } = await supabase
+        .from('pedidos')
+        .select(`
+          *,
+          clients:clients_id (name, legacy_id),
+          employees:empleado_id (full_name)
+        `)
+        .order('fecha_pedido', { ascending: false })
+
+      if (ordersData) setOrders(ordersData as any)
+
+      setEditSuccess(true)
+      setTimeout(() => {
+        setShowEditModal(false)
+        setEditSuccess(false)
+        setEditingOrder(null)
+      }, 1500)
+
+    } catch (error: any) {
+      console.error('Error updating order:', error)
+      setEditError(error.message || 'Error al actualizar el pedido')
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false)
+    setEditingOrder(null)
+    setEditError(null)
+    setEditSuccess(false)
+  }
+
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
       
@@ -551,7 +634,7 @@ export default function OrdersPage() {
                     <select
                       value={formData.client_id}
                       onChange={(e) => setFormData({ ...formData, client_id: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                      className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                       required
                     >
                       <option value="">Selecciona un cliente</option>
@@ -570,7 +653,7 @@ export default function OrdersPage() {
                     <select
                       value={formData.tipo_pago}
                       onChange={(e) => setFormData({ ...formData, tipo_pago: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                      className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                     >
                       <option value="Contado">Contado</option>
                       <option value="Crédito">Crédito</option>
@@ -586,7 +669,7 @@ export default function OrdersPage() {
                       <select
                         value={selectedProductId}
                         onChange={(e) => setSelectedProductId(e.target.value)}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                        className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                       >
                         <option value="">Selecciona un producto</option>
                         {products.map(product => (
@@ -604,7 +687,7 @@ export default function OrdersPage() {
                         value={productQuantity}
                         onChange={(e) => setProductQuantity(e.target.value)}
                         placeholder="Cantidad"
-                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                        className="flex-1 px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                       />
                      <button
                         type="button"
@@ -657,7 +740,7 @@ export default function OrdersPage() {
                     value={formData.observacion}
                     onChange={(e) => setFormData({ ...formData, observacion: e.target.value })}
                     rows={3}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
+                    className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
                     placeholder="Notas adicionales del pedido..."
                   />
                 </div>
@@ -706,7 +789,7 @@ export default function OrdersPage() {
                   <input 
                     type="text" 
                     placeholder="Buscar por Nro, Cliente o Vendedor..."
-                    className="w-full pl-12 pr-4 py-3 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    className="w-full pl-12 pr-4 py-3 text-sm text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -729,12 +812,13 @@ export default function OrdersPage() {
                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Vendedor</th>
                     <th className="px-6 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Total</th>
                     <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Estado</th>
+                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {loading ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-16 text-center">
+                      <td colSpan={7} className="px-6 py-16 text-center">
                         <div className="flex flex-col items-center justify-center gap-3">
                           <div className="w-10 h-10 border-4 border-green-200 border-t-green-600 rounded-full animate-spin"></div>
                           <p className="text-gray-600 font-medium">Cargando pedidos...</p>
@@ -743,7 +827,7 @@ export default function OrdersPage() {
                     </tr>
                   ) : filteredOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-16 text-center text-gray-500">
+                      <td colSpan={7} className="px-6 py-16 text-center text-gray-500">
                         No se encontraron pedidos
                       </td>
                     </tr>
@@ -782,6 +866,15 @@ export default function OrdersPage() {
                         <td className="px-6 py-5 text-center">
                           <StatusBadge status={order.estado} />
                         </td>
+                        <td className="px-6 py-5 text-center">
+                          <button
+                            onClick={() => handleEditOrder(order)}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all font-semibold text-sm shadow-md hover:shadow-lg"
+                          >
+                            <Edit className="w-4 h-4" />
+                            Editar
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -804,6 +897,171 @@ export default function OrdersPage() {
               </div>
             </div>
           </div>
+
+          {/* MODAL DE EDICIÓN */}
+          {showEditModal && editingOrder && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                {/* Header del Modal */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-8 py-6 border-b border-gray-200 rounded-t-3xl sticky top-0 z-10">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-blue-600 rounded-xl shadow-lg shadow-blue-900/20">
+                        <Edit className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-gray-900">Editar Pedido</h2>
+                        <p className="text-sm text-gray-600 mt-0.5">
+                          Pedido #{editingOrder.numero_documento}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-all"
+                    >
+                      <X className="w-6 h-6 text-gray-600" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Contenido del Modal */}
+                <div className="p-8">
+                  {/* Información del Pedido */}
+                  <div className="bg-gray-50 rounded-xl p-6 mb-6 border border-gray-200">
+                    <h3 className="text-sm font-bold text-gray-700 mb-4">Información del Pedido</h3>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-gray-600">Cliente:</p>
+                        <p className="font-bold text-gray-900">{editingOrder.clients?.name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Vendedor:</p>
+                        <p className="font-bold text-gray-900">{editingOrder.employees?.full_name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Fecha:</p>
+                        <p className="font-bold text-gray-900">
+                          {format(new Date(editingOrder.fecha_pedido), 'dd MMM yyyy HH:mm', { locale: es })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Total:</p>
+                        <p className="font-bold text-green-700 text-lg">{formatCurrency(editingOrder.total_venta)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mensajes de Error/Éxito */}
+                  {editError && (
+                    <div className="mb-6 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl">
+                      <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">Error</p>
+                        <p className="text-sm mt-0.5">{editError}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {editSuccess && (
+                    <div className="mb-6 flex items-start gap-3 bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl">
+                      <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">¡Pedido actualizado exitosamente!</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Formulario de Edición */}
+                  <form onSubmit={handleUpdateOrder} className="space-y-6">
+                    {/* Estado del Pedido */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Estado del Pedido *
+                      </label>
+                      <select
+                        value={editFormData.estado}
+                        onChange={(e) => setEditFormData({ ...editFormData, estado: e.target.value })}
+                        className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        required
+                      >
+                        <option value="Pendiente">Pendiente</option>
+                        <option value="Aprobado">Aprobado</option>
+                        <option value="Entregado">Entregado</option>
+                        <option value="Anulado">Anulado</option>
+                      </select>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Cambia el estado según el progreso del pedido
+                      </p>
+                    </div>
+
+                    {/* Tipo de Pago */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Tipo de Pago *
+                      </label>
+                      <select
+                        value={editFormData.tipo_pago}
+                        onChange={(e) => setEditFormData({ ...editFormData, tipo_pago: e.target.value })}
+                        className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        required
+                      >
+                        <option value="Contado">Contado (Pagado)</option>
+                        <option value="Crédito">Crédito (Pendiente de Pago)</option>
+                      </select>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Si el cliente ya pagó un crédito, cámbialo a "Contado"
+                      </p>
+                    </div>
+
+                    {/* Observaciones */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Observaciones
+                      </label>
+                      <textarea
+                        value={editFormData.observacion}
+                        onChange={(e) => setEditFormData({ ...editFormData, observacion: e.target.value })}
+                        rows={3}
+                        className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                        placeholder="Notas adicionales..."
+                      />
+                    </div>
+
+                    {/* Botones */}
+                    <div className="flex gap-4 pt-4">
+                      <button
+                        type="button"
+                        onClick={handleCloseEditModal}
+                        className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold transition-all"
+                        disabled={editLoading}
+                      >
+                        <X className="w-5 h-5 inline mr-2" />
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={editLoading}
+                        className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-semibold shadow-lg shadow-blue-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {editLoading ? (
+                          <>
+                            <Loader2 className="w-5 h-5 inline mr-2 animate-spin" />
+                            Guardando...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-5 h-5 inline mr-2" />
+                            Guardar Cambios
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
