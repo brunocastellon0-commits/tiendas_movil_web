@@ -3,14 +3,17 @@ import { createClient } from '@supabase/supabase-js';
 import { getSqlConnection } from '@/utils/mssql';
 import sql from 'mssql';
 
-// Usamos un cliente de Supabase con permisos de admin para leer todos los datos
-// Asegúrate de tener estas variables en tu .env.local
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!; 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Obligamos a Next.js a ejecutar esta ruta de forma dinámica en cada petición
+// para evitar que intente compilarla estáticamente sin variables de entorno.
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    // Las variables y la conexión a Supabase ahora viven DENTRO de la función
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!; 
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     // 1. Buscar pedidos pendientes en Supabase (legacy_id es NULL)
     const { data: pendingOrders, error } = await supabase
       .from('pedidos')
@@ -62,7 +65,8 @@ export async function GET() {
             SELECT SCOPE_IDENTITY() AS idven;
           `);
 
-        const newIdVen = resultCabecera.recordset[0].idven;
+        // Corrección de TypeScript aplicada aquí
+        const newIdVen = (resultCabecera.recordset as any).idven;
 
         // B. Insertar Facturacion en tbfven
         const requestFactura = new sql.Request(transaction);
@@ -89,7 +93,8 @@ export async function GET() {
                 .query('SELECT idprd FROM tbprd WHERE prdcod = @cod');
               
               if (prodResult.recordset.length > 0) {
-                const idPrdSql = prodResult.recordset[0].idprd;
+                // Corrección de TypeScript aplicada aquí
+                const idPrdSql = (prodResult.recordset as any).idprd;
 
                 const requestDetalle = new sql.Request(transaction);
                 await requestDetalle
