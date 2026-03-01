@@ -2,13 +2,17 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSqlConnection } from '@/utils/mssql';
 
-// Cliente con permisos de admin para escribir en tablas protegidas
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+// 1. OBLIGAMOS a Next.js a ejecutar esto dinámicamente y no en la compilación
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    // 2. METEMOS las variables y el cliente DENTRO de la función
+    // Cliente con permisos de admin para escribir en tablas protegidas
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
     const pool = await getSqlConnection();
     
     // --- DEFINICIÓN GLOBAL DEL TAMAÑO DE LOTE ---
