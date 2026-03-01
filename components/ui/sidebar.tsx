@@ -10,7 +10,8 @@ import {
   Settings, 
   UserSquare2,
   ChevronRight,
-  CircleDot
+  CircleDot,
+  RefreshCw
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -22,6 +23,7 @@ const menuItems = [
   { name: 'Pareto', href: '/dashboard/reportes', icon: Settings },
   { name: 'Clientes', href: '/dashboard/clientes', icon: UserSquare2 },
   { name: 'Mapa', href: '/dashboard/mapa', icon: MapPin },
+  { name: 'Sincronización', href: '/dashboard/sincronizacion', icon: RefreshCw },
 ]
 
 const supabase = createClient()
