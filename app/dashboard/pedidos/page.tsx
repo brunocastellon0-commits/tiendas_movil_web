@@ -4,14 +4,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { 
   Search, 
-  Filter, 
   ShoppingCart, 
   Calendar, 
-  MapPin, 
   User, 
-  ChevronRight, 
-  X, 
-  FileText, 
   CheckCircle2, 
   XCircle, 
   Clock,
@@ -22,16 +17,14 @@ import {
   Loader2,
   AlertTriangle,
   Edit,
-  CheckCircle
+  X
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import Link from 'next/link'
 import EmployeesTab from './components/EmployeesTab'
 import ReportsTab from './components/ReportsTab'
 
-
-// --- 1. Tipos TypeScript (Basado en tus imágenes DB) ---
+// --- Tipos TypeScript ---
 
 type Product = {
   id: string
@@ -39,16 +32,19 @@ type Product = {
   nombre_producto: string
   precio_base_venta: number
   unidad_base_venta: string
+  // Necesitamos el legacy_id (idprd de SQL) o usaremos el codigo para buscarlo
+  legacy_id?: number 
 }
 
 type Client = {
   id: string
   name: string
-  legacy_id: string | null
+  legacy_id: string | null // El ID del cliente en SQL Server (tbcli)
 }
 
 type OrderProduct = {
   producto_id: string
+  codigo_producto: string // Agregado para sincronización
   nombre_producto: string
   cantidad: number
   precio_unitario: number
@@ -56,27 +52,15 @@ type OrderProduct = {
   subtotal: number
 }
 
-type OrderDetail = {
-  id: string
-  cantidad: number
-  precio_unitario: number
-  subtotal: number
-  unidad_seleccionada: string
-  producto: {
-    nombre_producto: string
-    codigo_producto: string
-  }
-}
-
 type Order = {
   id: string
   numero_documento: number
   fecha_pedido: string
   total_venta: number
-  estado: string // 'Pendiente' | 'Entregado' | 'Cancelado'
+  estado: string 
   tipo_pago: string
   observacion: string | null
-  ubicacion_venta: any // GeoJSON
+  ubicacion_venta: any 
   clients: {
     name: string
     legacy_id: string | null
@@ -86,7 +70,7 @@ type Order = {
   } | null
 }
 
-// --- 2. Componente de Estado (Badge) ---
+// --- Componente de Estado (Badge) ---
 const StatusBadge = ({ status }: { status: string }) => {
   const styles: any = {
     'Pendiente': 'bg-yellow-100 text-yellow-800 border-yellow-200',
@@ -113,7 +97,7 @@ const StatusBadge = ({ status }: { status: string }) => {
   )
 }
 
-// --- 3. Página Principal ---
+// --- Página Principal ---
 export default function OrdersPage() {
   const supabase = createClient()
   
@@ -141,7 +125,7 @@ export default function OrdersPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState(false)
   
-  // Estados para edición de pedidos
+  // Estados para edición
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editFormData, setEditFormData] = useState({
@@ -158,7 +142,6 @@ export default function OrdersPage() {
     const fetchData = async () => {
       try {
         setLoading(true)
-        console.log('🔍 Fetching orders...')
         
         // Cargar pedidos
         const { data: ordersData, error: ordersError } = await supabase
@@ -186,7 +169,7 @@ export default function OrdersPage() {
         const { data: productsData, error: productsError } = await supabase
           .from('productos')
           .select('id, codigo_producto, nombre_producto, precio_base_venta, unidad_base_venta')
-          .eq('estado', 'Activo')
+          .eq('estado', 'Activo') // Asumiendo que 'estado' es string 'Activo'/'Inactivo'
           .order('nombre_producto')
 
         if (productsError) throw productsError
@@ -242,6 +225,7 @@ export default function OrdersPage() {
 
     const newProduct: OrderProduct = {
       producto_id: product.id,
+      codigo_producto: product.codigo_producto,
       nombre_producto: product.nombre_producto,
       cantidad,
       precio_unitario: product.precio_base_venta,
@@ -277,6 +261,9 @@ export default function OrdersPage() {
     setFormSuccess(false)
   }
 
+  /**
+   * MANEJO DEL ENVÍO DE PEDIDO (Sync Logic)
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -299,22 +286,13 @@ export default function OrdersPage() {
       // Obtener el empleado del usuario autenticado
       const { data: { user } } = await supabase.auth.getUser()
       
-      console.log('👤 Usuario autenticado:', user?.email)
-      
-      // Buscar el empleado por email
-      const { data: employeeData, error: empError } = await supabase
+      const { data: employeeData } = await supabase
         .from('employees')
         .select('id, full_name')
         .eq('email', user?.email)
         .single()
 
-      if (empError) {
-        console.warn('⚠️ No se encontró empleado para este usuario:', empError.message)
-      } else {
-        console.log('✅ Empleado encontrado:', employeeData?.full_name, '- ID:', employeeData?.id)
-      }
-
-      // 1. Crear el pedido
+      // 1. Guardar en Supabase (Cabecera)
       const { data: orderData, error: orderError } = await supabase
         .from('pedidos')
         .insert({
@@ -324,14 +302,14 @@ export default function OrdersPage() {
           estado: formData.estado,
           total_venta: total,
           fecha_pedido: new Date().toISOString(),
-          empleado_id: employeeData?.id || null // Asignar empleado si existe
+          empleado_id: employeeData?.id || null
         })
         .select()
         .single()
 
       if (orderError) throw orderError
 
-      // 2. Crear los detalles del pedido
+      // 2. Guardar en Supabase (Detalles)
       const detalles = orderProducts.map(p => ({
         pedido_id: orderData.id,
         producto_id: p.producto_id,
@@ -348,8 +326,43 @@ export default function OrdersPage() {
 
       if (detallesError) throw detallesError
 
-      // 3. Recargar pedidos
-      const { data: ordersData } = await supabase
+      // 3. SINCRONIZACIÓN CON SQL SERVER LOCAL (El Puente)
+      try {
+        const clientSelected = clients.find(c => c.id === formData.client_id);
+        
+        const syncPayload = {
+          entity: 'ORDER',
+          data: {
+            // Datos para SQL Server
+            cliente_legacy_id: clientSelected?.legacy_id ? parseInt(clientSelected.legacy_id) : 0,
+            total_venta: total,
+            // Enviamos los detalles para que el backend los inserte en tbivven
+            items: orderProducts.map(p => ({
+                codigo_producto: p.codigo_producto,
+                cantidad: p.cantidad,
+                precio: p.precio_unitario
+            }))
+          }
+        };
+
+        const syncResponse = await fetch('/api/sync/master', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(syncPayload)
+        });
+
+        if (!syncResponse.ok) {
+          console.warn('Pedido guardado en web, pendiente en local.');
+        } else {
+          console.log('✅ Pedido sincronizado con Adminisis');
+        }
+
+      } catch (syncError) {
+        console.error('Error de red al sincronizar pedido:', syncError);
+      }
+
+      // 4. Finalización y Recarga
+      const { data: updatedOrders } = await supabase
         .from('pedidos')
         .select(`
           *,
@@ -358,9 +371,8 @@ export default function OrdersPage() {
         `)
         .order('fecha_pedido', { ascending: false })
 
-      if (ordersData) setOrders(ordersData as any)
+      if (updatedOrders) setOrders(updatedOrders as any)
 
-      // 4. Limpiar formulario y mostrar éxito
       handleClearForm()
       setFormSuccess(true)
       setTimeout(() => setFormSuccess(false), 3000)
@@ -373,7 +385,7 @@ export default function OrdersPage() {
     }
   }
 
-  // Funciones para editar pedidos
+  // --- Funciones para Editar (Solo local web por ahora) ---
   const handleEditOrder = (order: Order) => {
     setEditingOrder(order)
     setEditFormData({
@@ -388,14 +400,10 @@ export default function OrdersPage() {
 
   const handleUpdateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
-    
     if (!editingOrder) return
 
     try {
       setEditLoading(true)
-      setEditError(null)
-
-      // Actualizar el pedido
       const { error: updateError } = await supabase
         .from('pedidos')
         .update({
@@ -407,7 +415,7 @@ export default function OrdersPage() {
 
       if (updateError) throw updateError
 
-      // Recargar pedidos
+      // Recargar
       const { data: ordersData } = await supabase
         .from('pedidos')
         .select(`
@@ -427,8 +435,7 @@ export default function OrdersPage() {
       }, 1500)
 
     } catch (error: any) {
-      console.error('Error updating order:', error)
-      setEditError(error.message || 'Error al actualizar el pedido')
+      setEditError(error.message)
     } finally {
       setEditLoading(false)
     }
@@ -444,47 +451,16 @@ export default function OrdersPage() {
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
       
-      {/* Patrón de rombos/diamantes */}
+      {/* Fondos decorativos */}
       <div className="fixed inset-0 z-0 pointer-events-none opacity-35" 
-           style={{
-             backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(16, 185, 129, 0.25) 35px, rgba(16, 185, 129, 0.25) 39px), repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(16, 185, 129, 0.25) 35px, rgba(16, 185, 129, 0.25) 39px)`,
-           }}>
-      </div>
-      <div className="fixed inset-0 z-0 pointer-events-none opacity-25" 
-           style={{
-             backgroundImage: `radial-gradient(circle at 2px 2px, rgba(20, 184, 166, 0.12) 1px, transparent 1px)`,
-             backgroundSize: '48px 48px'
-           }}>
+           style={{ backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(16, 185, 129, 0.25) 35px, rgba(16, 185, 129, 0.25) 39px)` }}>
       </div>
       <div className="fixed inset-0 z-0 bg-gradient-to-b from-white/40 via-transparent to-transparent pointer-events-none"></div>
-      
-      {/* Círculos blur */}
-      <div className="fixed -top-24 -left-24 w-96 h-96 bg-green-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      <div className="fixed top-32 left-32 w-64 h-64 bg-emerald-300/20 rounded-full blur-2xl z-0 pointer-events-none"></div>
-      <div className="fixed -top-32 -right-32 w-[500px] h-[500px] bg-teal-200/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-100/20 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      <div className="fixed -bottom-40 -left-20 w-[450px] h-[450px] bg-green-300/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      <div className="fixed -bottom-20 -right-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      
-      {/* Figuras geométricas */}
-      <div className="fixed top-20 right-1/4 w-20 h-20 border-3 border-emerald-500/40 rounded-xl rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
-      <div className="fixed top-32 right-1/3 w-14 h-14 bg-green-400/15 rounded-lg -rotate-6 z-0 pointer-events-none"></div>
-      <div className="fixed top-40 left-1/4 w-16 h-16 border-3 border-teal-500/35 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-500/10"></div>
-      <div className="fixed top-56 left-1/3 w-12 h-12 bg-emerald-300/20 rotate-45 z-0 pointer-events-none"></div>
-      <div className="fixed top-1/2 left-16 w-24 h-24 border-3 border-green-500/40 rotate-45 z-0 pointer-events-none shadow-lg shadow-green-500/10"></div>
-      <div className="fixed top-1/2 left-32 w-10 h-10 bg-teal-400/20 rounded-lg -rotate-12 z-0 pointer-events-none"></div>
-      <div className="fixed top-1/3 right-20 w-18 h-18 border-3 border-emerald-600/35 rounded-2xl rotate-45 z-0 pointer-events-none shadow-lg shadow-emerald-600/10"></div>
-      <div className="fixed top-2/3 right-32 w-22 h-22 border-3 border-green-400/40 rotate-12 rounded-lg z-0 pointer-events-none"></div>
-      <div className="fixed bottom-1/3 left-20 w-16 h-16 border-3 border-teal-600/40 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-600/10"></div>
-      <div className="fixed bottom-1/4 left-40 w-14 h-14 bg-green-300/20 rounded-xl rotate-45 z-0 pointer-events-none"></div>
-      <div className="fixed bottom-20 right-1/4 w-20 h-20 border-3 border-emerald-500/45 rounded-lg -rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
-      <div className="fixed bottom-32 right-1/3 w-12 h-12 bg-teal-400/25 rotate-6 z-0 pointer-events-none"></div>
       
       <div className="relative z-10 space-y-6">
       
       {/* HEADER */}
       <div className="flex flex-col gap-6">
-        {/* Header Principal */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-lg border-2 border-green-100">
           <div>
             <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 bg-clip-text text-transparent">
@@ -494,585 +470,213 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* TABS NAVIGATION - Diseño vibrante */}
+        {/* TABS */}
         <nav className="flex flex-col sm:flex-row gap-3 bg-white p-3 rounded-3xl border-2 border-green-100 shadow-2xl">
-          <button
-            onClick={() => setActiveTab('pedidos')}
-            className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all duration-300 ${
-              activeTab === 'pedidos'
-                ? 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white shadow-xl shadow-green-900/30 scale-105 border-2 border-green-400'
-                : 'text-gray-700 hover:bg-green-50 border-2 border-transparent hover:border-green-200 hover:scale-102 shadow-sm'
-            }`}
-          >
-            <ShoppingCart className="w-5 h-5" />
-            Pedidos
+          <button onClick={() => setActiveTab('pedidos')}
+            className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${activeTab === 'pedidos' ? 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white shadow-xl' : 'text-gray-700 hover:bg-green-50'}`}>
+            <ShoppingCart className="w-5 h-5" /> Pedidos
           </button>
-          <button
-            onClick={() => setActiveTab('empleados')}
-            className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all duration-300 ${
-              activeTab === 'empleados'
-                ? 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white shadow-xl shadow-green-900/30 scale-105 border-2 border-green-400'
-                : 'text-gray-700 hover:bg-green-50 border-2 border-transparent hover:border-green-200 hover:scale-102 shadow-sm'
-            }`}
-          >
-            <User className="w-5 h-5" />
-            Por Empleado
+          <button onClick={() => setActiveTab('empleados')}
+            className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${activeTab === 'empleados' ? 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white shadow-xl' : 'text-gray-700 hover:bg-green-50'}`}>
+            <User className="w-5 h-5" /> Por Empleado
           </button>
-          <button
-            onClick={() => setActiveTab('reportes')}
-            className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all duration-300 ${
-              activeTab === 'reportes'
-                ? 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white shadow-xl shadow-green-900/30 scale-105 border-2 border-green-400'
-                : 'text-gray-700 hover:bg-green-50 border-2 border-transparent hover:border-green-200 hover:scale-102 shadow-sm'
-            }`}
-          >
-            <FileText className="w-5 h-5" />
-            Reportes
+          <button onClick={() => setActiveTab('reportes')}
+            className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${activeTab === 'reportes' ? 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white shadow-xl' : 'text-gray-700 hover:bg-green-50'}`}>
+            <Clock className="w-5 h-5" /> Reportes
           </button>
         </nav>
       </div>
 
-      {/* TAB: PEDIDOS */}
+      {/* CONTENIDO TAB PEDIDOS */}
       {activeTab === 'pedidos' && (
         <>
-          {/* KPIS - Diseño vibrante */}
+          {/* KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
-            
-            {/* KPI 1: Ventas Totales - Verde principal */}
-            <div className="group relative bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-green-400 hover:scale-105">
-              <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
-                    <DollarSign className="w-7 h-7 text-white" />
-                  </div>
-                  <span className="text-xs font-bold bg-white text-green-600 px-4 py-1.5 rounded-full shadow-md">
-                    VENTAS
-                  </span>
-                </div>
-                <h3 className="text-3xl lg:text-4xl font-black text-white mb-1">{formatCurrency(kpis.totalVentas)}</h3>
-                <p className="text-sm text-green-50 font-semibold">Ingresos del período</p>
-              </div>
+            <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-6 rounded-3xl shadow-xl text-white">
+               <div className="flex justify-between mb-4"><DollarSign className="w-7 h-7"/> <span className="font-bold">VENTAS</span></div>
+               <h3 className="text-3xl font-black">{formatCurrency(kpis.totalVentas)}</h3>
             </div>
-
-            {/* KPI 2: Total Pedidos - Azul vibrante */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-blue-400 hover:scale-105">
-              <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
-                    <FileText className="w-7 h-7 text-white" />
-                  </div>
-                  <span className="text-xs font-bold bg-white text-blue-600 px-4 py-1.5 rounded-full shadow-md">
-                    PEDIDOS
-                  </span>
-                </div>
-                <h3 className="text-4xl font-black text-white mb-1">{kpis.countOrders}</h3>
-                <p className="text-sm text-blue-50 font-semibold">Registrados en sistema</p>
-              </div>
+            <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-6 rounded-3xl shadow-xl text-white">
+               <div className="flex justify-between mb-4"><ShoppingCart className="w-7 h-7"/> <span className="font-bold">PEDIDOS</span></div>
+               <h3 className="text-3xl font-black">{kpis.countOrders}</h3>
             </div>
-
-            {/* KPI 3: Pendientes - Naranja vibrante */}
-            <div className="group relative bg-gradient-to-br from-orange-500 via-orange-600 to-amber-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-orange-400 hover:scale-105">
-              <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
-                    <Clock className="w-7 h-7 text-white" />
-                  </div>
-                  <span className="text-xs font-bold bg-white text-orange-600 px-4 py-1.5 rounded-full shadow-md">
-                    PENDIENTES
-                  </span>
-                </div>
-                <h3 className="text-4xl font-black text-white mb-1">{kpis.countPendientes}</h3>
-                <p className="text-sm text-orange-50 font-semibold">Por despachar</p>
-              </div>
+            <div className="bg-gradient-to-br from-orange-500 to-amber-600 p-6 rounded-3xl shadow-xl text-white">
+               <div className="flex justify-between mb-4"><Clock className="w-7 h-7"/> <span className="font-bold">PENDIENTES</span></div>
+               <h3 className="text-3xl font-black">{kpis.countPendientes}</h3>
             </div>
           </div>
 
-          {/* FORMULARIO DE NUEVO PEDIDO */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200">
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-8 py-6 border-b border-gray-200 rounded-t-2xl">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-green-600 rounded-xl shadow-lg shadow-green-900/20">
-                  <ShoppingCart className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Nuevo Pedido</h2>
-                  <p className="text-sm text-gray-600 mt-0.5">Completa los datos para crear un pedido</p>
-                </div>
-              </div>
-            </div>
+          {/* FORMULARIO NUEVO PEDIDO */}
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8">
+             <h2 className="text-xl font-bold mb-6 text-gray-800 flex items-center gap-2">
+                <Plus className="w-6 h-6 text-green-600"/> Nuevo Pedido
+             </h2>
+             
+             {formSuccess && <div className="mb-4 p-4 bg-green-100 text-green-700 rounded-xl flex gap-2"><CheckCircle2/> Pedido creado exitosamente</div>}
+             {formError && <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-xl flex gap-2"><AlertTriangle/> {formError}</div>}
 
-            <div className="p-8">
-              {formError && (
-                <div className="mb-6 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl">
-                  <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold">Error</p>
-                    <p className="text-sm mt-0.5">{formError}</p>
-                  </div>
-                </div>
-              )}
-
-              {formSuccess && (
-                <div className="mb-6 flex items-start gap-3 bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold">¡Pedido creado exitosamente!</p>
-                  </div>
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Cliente y Tipo de Pago */}
+             <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Cliente *
-                    </label>
-                    <select
-                      value={formData.client_id}
-                      onChange={(e) => setFormData({ ...formData, client_id: e.target.value })}
-                      className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                      required
-                    >
-                      <option value="">Selecciona un cliente</option>
-                      {clients.map(client => (
-                        <option key={client.id} value={client.id}>
-                          {client.name} {client.legacy_id && `(${client.legacy_id})`}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Tipo de Pago
-                    </label>
-                    <select
-                      value={formData.tipo_pago}
-                      onChange={(e) => setFormData({ ...formData, tipo_pago: e.target.value })}
-                      className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    >
-                      <option value="Contado">Contado</option>
-                      <option value="Crédito">Crédito</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Agregar Productos */}
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 bg-gray-50">
-                  <h3 className="text-sm font-bold text-gray-700 mb-4">Agregar Productos</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="md:col-span-2">
-                      <select
-                        value={selectedProductId}
-                        onChange={(e) => setSelectedProductId(e.target.value)}
-                        className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                      >
-                        <option value="">Selecciona un producto</option>
-                        {products.map(product => (
-                          <option key={product.id} value={product.id}>
-                            {product.nombre_producto} - {formatCurrency(product.precio_base_venta)} / {product.unidad_base_venta}
-                          </option>
-                        ))}
+                   <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">Cliente</label>
+                      <select className="w-full p-3 border-2 border-gray-200 rounded-xl"
+                        value={formData.client_id} onChange={e => setFormData({...formData, client_id: e.target.value})}>
+                        <option value="">Seleccionar Cliente</option>
+                        {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        value={productQuantity}
-                        onChange={(e) => setProductQuantity(e.target.value)}
-                        placeholder="Cantidad"
-                        className="flex-1 px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                      />
-                     <button
-                        type="button"
-                        onClick={handleAddProduct}
-                        className="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all flex items-center gap-2 font-semibold shadow-lg shadow-green-900/20"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Lista de Productos Agregados */}
-                  {orderProducts.length > 0 && (
-                    <div className="mt-6 space-y-3">
-                      <h4 className="text-sm font-bold text-gray-700">Productos en el pedido:</h4>
-                      {orderProducts.map((product, index) => (
-                        <div key={index} className="flex items-center justify-between bg-white p-4 rounded-xl border border-gray-200">
-                          <div className="flex-1">
-                            <p className="font-semibold text-gray-900">{product.nombre_producto}</p>
-                            <p className="text-sm text-gray-600">
-                              {product.cantidad} {product.unidad_seleccionada} × {formatCurrency(product.precio_unitario)}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <p className="font-bold text-gray-900">{formatCurrency(product.subtotal)}</p>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveProduct(index)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                      <div className="flex justify-between items-center p-4 bg-green-50 rounded-xl border-2 border-green-200">
-                        <span className="font-bold text-gray-900">Total:</span>
-                        <span className="text-2xl font-bold text-green-700">{formatCurrency(calculateTotal())}</span>
-                      </div>
-                    </div>
-                  )}
+                   </div>
+                   <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">Tipo Pago</label>
+                      <select className="w-full p-3 border-2 border-gray-200 rounded-xl"
+                        value={formData.tipo_pago} onChange={e => setFormData({...formData, tipo_pago: e.target.value})}>
+                        <option value="Contado">Contado</option>
+                        <option value="Crédito">Crédito</option>
+                      </select>
+                   </div>
                 </div>
 
-                {/* Observaciones */}
+                <div className="p-6 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+                   <h3 className="font-bold text-gray-700 mb-4">Agregar Productos</h3>
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                      <div className="md:col-span-2">
+                         <select className="w-full p-3 border rounded-xl" 
+                           value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)}>
+                           <option value="">Buscar producto...</option>
+                           {products.map(p => (
+                             <option key={p.id} value={p.id}>{p.nombre_producto} - {formatCurrency(p.precio_base_venta)}</option>
+                           ))}
+                         </select>
+                      </div>
+                      <div className="flex gap-2">
+                         <input type="number" className="w-20 p-3 border rounded-xl" value={productQuantity} onChange={e => setProductQuantity(e.target.value)}/>
+                         <button type="button" onClick={handleAddProduct} className="bg-green-600 text-white px-4 rounded-xl font-bold flex-1">Agregar</button>
+                      </div>
+                   </div>
+
+                   {orderProducts.map((p, i) => (
+                     <div key={i} className="flex justify-between items-center bg-white p-3 rounded-lg border mb-2 shadow-sm">
+                        <div>
+                           <div className="font-bold">{p.nombre_producto}</div>
+                           <div className="text-sm text-gray-500">{p.cantidad} x {formatCurrency(p.precio_unitario)}</div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                           <div className="font-bold">{formatCurrency(p.subtotal)}</div>
+                           <button type="button" onClick={() => handleRemoveProduct(i)} className="text-red-500"><Trash2/></button>
+                        </div>
+                     </div>
+                   ))}
+                   
+                   {orderProducts.length > 0 && (
+                     <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-300">
+                        <span className="font-bold text-lg">Total:</span>
+                        <span className="font-bold text-2xl text-green-700">{formatCurrency(calculateTotal())}</span>
+                     </div>
+                   )}
+                </div>
+
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Observaciones
-                  </label>
-                  <textarea
-                    value={formData.observacion}
-                    onChange={(e) => setFormData({ ...formData, observacion: e.target.value })}
-                    rows={3}
-                    className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
-                    placeholder="Notas adicionales del pedido..."
-                  />
+                   <label className="block text-sm font-bold text-gray-700 mb-2">Observaciones</label>
+                   <textarea className="w-full p-3 border-2 border-gray-200 rounded-xl" rows={2}
+                     value={formData.observacion} onChange={e => setFormData({...formData, observacion: e.target.value})}></textarea>
                 </div>
 
-                {/* Botones */}
-                <div className="flex gap-4 pt-4">
-                  <button
-                    type="button"
-                    onClick={handleClearForm}
-                    className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold transition-all"
-                    disabled={formLoading}
-                  >
-                    <X className="w-5 h-5 inline mr-2" />
-                    Limpiar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={formLoading || orderProducts.length === 0}
-                    className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 font-semibold shadow-lg shadow-green-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {formLoading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 inline mr-2 animate-spin" />
-                        Creando...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-5 h-5 inline mr-2" />
-                        Crear Pedido
-                      </>
-                    )}
-                  </button>
+                <div className="flex gap-4">
+                   <button type="button" onClick={handleClearForm} className="px-6 py-3 border-2 border-gray-300 rounded-xl font-bold text-gray-600 hover:bg-gray-100">Limpiar</button>
+                   <button type="submit" disabled={formLoading} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 flex justify-center items-center gap-2">
+                      {formLoading && <Loader2 className="animate-spin"/>} Crear Pedido
+                   </button>
                 </div>
-              </form>
-            </div>
+             </form>
           </div>
 
-          {/* TABLA DE PEDIDOS */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-            
-            {/* Toolbar */}
-            <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-5 border-b border-gray-200">
-              <div className="flex items-center gap-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input 
-                    type="text" 
-                    placeholder="Buscar por Nro, Cliente o Vendedor..."
-                    className="w-full pl-12 pr-4 py-3 text-sm text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+          {/* TABLA DE PEDIDOS RECIENTES */}
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden mt-6">
+             <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
+                <h3 className="font-bold text-gray-700">Pedidos Recientes</h3>
+                <div className="relative">
+                   <Search className="absolute left-3 top-2.5 text-gray-400 w-4 h-4"/>
+                   <input type="text" placeholder="Buscar..." className="pl-9 pr-4 py-2 border rounded-lg text-sm"
+                     value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
                 </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-gray-600">Mostrando</span>
-                  <span className="font-bold text-green-600">{filteredOrders.length}</span>
-                  <span className="text-gray-600">pedidos</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gradient-to-r from-gray-50 to-slate-50 border-b-2 border-gray-200">
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">N° Pedido</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Fecha</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Cliente</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Vendedor</th>
-                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Total</th>
-                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Estado</th>
-                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Acciones</th>
-                  </tr>
+             </div>
+             <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                   <tr>
+                      <th className="p-4 text-left">Pedido #</th>
+                      <th className="p-4 text-left">Fecha</th>
+                      <th className="p-4 text-left">Cliente</th>
+                      <th className="p-4 text-right">Total</th>
+                      <th className="p-4 text-center">Estado</th>
+                      <th className="p-4 text-center">Acciones</th>
+                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={7} className="px-6 py-16 text-center">
-                        <div className="flex flex-col items-center justify-center gap-3">
-                          <div className="w-10 h-10 border-4 border-green-200 border-t-green-600 rounded-full animate-spin"></div>
-                          <p className="text-gray-600 font-medium">Cargando pedidos...</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : filteredOrders.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-6 py-16 text-center text-gray-500">
-                        No se encontraron pedidos
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredOrders.map((order) => (
-                      <tr key={order.id} className="hover:bg-gradient-to-r hover:from-green-50/30 hover:to-emerald-50/30 transition-all">
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center text-green-700 font-bold text-sm shadow-sm">
-                              #
-                            </div>
-                            <span className="font-mono text-sm font-bold text-gray-900">{order.numero_documento}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Calendar className="w-4 h-4 text-gray-400" />
-                            <span className="font-medium">{format(new Date(order.fecha_pedido), 'dd MMM yyyy', { locale: es })}</span>
-                          </div>
-                          <div className="text-xs text-gray-400 mt-0.5 ml-6">
-                            {format(new Date(order.fecha_pedido), 'HH:mm', { locale: es })}
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="text-sm font-bold text-gray-900">{order.clients?.name || 'Cliente Casual'}</div>
-                          {order.clients?.legacy_id && (
-                            <div className="text-xs text-gray-400 mt-0.5">Cod: {order.clients.legacy_id}</div>
-                          )}
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="text-sm text-gray-600 font-medium">{order.employees?.full_name || 'Admin'}</div>
-                        </td>
-                        <td className="px-6 py-5 text-right">
-                          <div className="text-base font-bold text-gray-900">{formatCurrency(order.total_venta)}</div>
-                        </td>
-                        <td className="px-6 py-5 text-center">
-                          <StatusBadge status={order.estado} />
-                        </td>
-                        <td className="px-6 py-5 text-center">
-                          <button
-                            onClick={() => handleEditOrder(order)}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all font-semibold text-sm shadow-md hover:shadow-lg"
-                          >
-                            <Edit className="w-4 h-4" />
-                            Editar
-                          </button>
-                        </td>
+                <tbody className="divide-y">
+                   {filteredOrders.map(o => (
+                      <tr key={o.id} className="hover:bg-gray-50">
+                         <td className="p-4 font-bold">{o.numero_documento}</td>
+                         <td className="p-4">{format(new Date(o.fecha_pedido), 'dd/MM/yy HH:mm')}</td>
+                         <td className="p-4">{o.clients?.name}</td>
+                         <td className="p-4 text-right font-bold">{formatCurrency(o.total_venta)}</td>
+                         <td className="p-4 text-center"><StatusBadge status={o.estado}/></td>
+                         <td className="p-4 text-center">
+                            <button onClick={() => handleEditOrder(o)} className="text-blue-600 hover:bg-blue-50 p-2 rounded"><Edit className="w-4 h-4"/></button>
+                         </td>
                       </tr>
-                    ))
-                  )}
+                   ))}
                 </tbody>
-              </table>
-            </div>
-            
-            {/* Footer */}
-            <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-4 border-t-2 border-gray-200 flex items-center justify-between">
-              <span className="text-sm text-gray-600">
-                Página 1 de 1
-              </span>
-              <div className="flex gap-2">
-                <button className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 font-medium transition-all" disabled>
-                  Anterior
-                </button>
-                <button className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 font-medium transition-all" disabled>
-                  Siguiente
-                </button>
-              </div>
-            </div>
+             </table>
           </div>
-
-          {/* MODAL DE EDICIÓN */}
-          {showEditModal && editingOrder && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                {/* Header del Modal */}
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-8 py-6 border-b border-gray-200 rounded-t-3xl sticky top-0 z-10">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 bg-blue-600 rounded-xl shadow-lg shadow-blue-900/20">
-                        <Edit className="w-6 h-6 text-white" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-gray-900">Editar Pedido</h2>
-                        <p className="text-sm text-gray-600 mt-0.5">
-                          Pedido #{editingOrder.numero_documento}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleCloseEditModal}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-all"
-                    >
-                      <X className="w-6 h-6 text-gray-600" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Contenido del Modal */}
-                <div className="p-8">
-                  {/* Información del Pedido */}
-                  <div className="bg-gray-50 rounded-xl p-6 mb-6 border border-gray-200">
-                    <h3 className="text-sm font-bold text-gray-700 mb-4">Información del Pedido</h3>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-600">Cliente:</p>
-                        <p className="font-bold text-gray-900">{editingOrder.clients?.name || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Vendedor:</p>
-                        <p className="font-bold text-gray-900">{editingOrder.employees?.full_name || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Fecha:</p>
-                        <p className="font-bold text-gray-900">
-                          {format(new Date(editingOrder.fecha_pedido), 'dd MMM yyyy HH:mm', { locale: es })}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Total:</p>
-                        <p className="font-bold text-green-700 text-lg">{formatCurrency(editingOrder.total_venta)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Mensajes de Error/Éxito */}
-                  {editError && (
-                    <div className="mb-6 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl">
-                      <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-semibold">Error</p>
-                        <p className="text-sm mt-0.5">{editError}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {editSuccess && (
-                    <div className="mb-6 flex items-start gap-3 bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl">
-                      <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-semibold">¡Pedido actualizado exitosamente!</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Formulario de Edición */}
-                  <form onSubmit={handleUpdateOrder} className="space-y-6">
-                    {/* Estado del Pedido */}
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Estado del Pedido *
-                      </label>
-                      <select
-                        value={editFormData.estado}
-                        onChange={(e) => setEditFormData({ ...editFormData, estado: e.target.value })}
-                        className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                        required
-                      >
-                        <option value="Pendiente">Pendiente</option>
-                        <option value="Aprobado">Aprobado</option>
-                        <option value="Entregado">Entregado</option>
-                        <option value="Anulado">Anulado</option>
-                      </select>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Cambia el estado según el progreso del pedido
-                      </p>
-                    </div>
-
-                    {/* Tipo de Pago */}
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Tipo de Pago *
-                      </label>
-                      <select
-                        value={editFormData.tipo_pago}
-                        onChange={(e) => setEditFormData({ ...editFormData, tipo_pago: e.target.value })}
-                        className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                        required
-                      >
-                        <option value="Contado">Contado (Pagado)</option>
-                        <option value="Crédito">Crédito (Pendiente de Pago)</option>
-                      </select>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Si el cliente ya pagó un crédito, cámbialo a "Contado"
-                      </p>
-                    </div>
-
-                    {/* Observaciones */}
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Observaciones
-                      </label>
-                      <textarea
-                        value={editFormData.observacion}
-                        onChange={(e) => setEditFormData({ ...editFormData, observacion: e.target.value })}
-                        rows={3}
-                        className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
-                        placeholder="Notas adicionales..."
-                      />
-                    </div>
-
-                    {/* Botones */}
-                    <div className="flex gap-4 pt-4">
-                      <button
-                        type="button"
-                        onClick={handleCloseEditModal}
-                        className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold transition-all"
-                        disabled={editLoading}
-                      >
-                        <X className="w-5 h-5 inline mr-2" />
-                        Cancelar
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={editLoading}
-                        className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-semibold shadow-lg shadow-blue-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {editLoading ? (
-                          <>
-                            <Loader2 className="w-5 h-5 inline mr-2 animate-spin" />
-                            Guardando...
-                          </>
-                        ) : (
-                          <>
-                            <Save className="w-5 h-5 inline mr-2" />
-                            Guardar Cambios
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            </div>
-          )}
         </>
       )}
 
-      {/* TAB: POR EMPLEADO */}
-      {activeTab === 'empleados' && (
-        <EmployeesTab />
-      )}
+      {/* TABS SECUNDARIOS */}
+      {activeTab === 'empleados' && <EmployeesTab />}
+      {activeTab === 'reportes' && <ReportsTab />}
 
-      {/* TAB: REPORTES */}
-      {activeTab === 'reportes' && (
-        <ReportsTab />
+      {/* MODAL EDITAR PEDIDO */}
+      {showEditModal && editingOrder && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+           <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+              <div className="flex justify-between items-center mb-6">
+                 <h3 className="text-xl font-bold">Editar Pedido #{editingOrder.numero_documento}</h3>
+                 <button onClick={handleCloseEditModal}><X/></button>
+              </div>
+              
+              {editSuccess && <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-lg flex gap-2"><CheckCircle2/> Actualizado</div>}
+
+              <form onSubmit={handleUpdateOrder} className="space-y-4">
+                 <div>
+                    <label className="font-bold text-sm">Estado</label>
+                    <select className="w-full p-3 border rounded-xl" 
+                      value={editFormData.estado} onChange={e => setEditFormData({...editFormData, estado: e.target.value})}>
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="Aprobado">Aprobado</option>
+                      <option value="Entregado">Entregado</option>
+                      <option value="Anulado">Anulado</option>
+                    </select>
+                 </div>
+                 <div>
+                    <label className="font-bold text-sm">Tipo Pago</label>
+                    <select className="w-full p-3 border rounded-xl"
+                      value={editFormData.tipo_pago} onChange={e => setEditFormData({...editFormData, tipo_pago: e.target.value})}>
+                      <option value="Contado">Contado</option>
+                      <option value="Crédito">Crédito</option>
+                    </select>
+                 </div>
+                 <div>
+                    <label className="font-bold text-sm">Observación</label>
+                    <textarea className="w-full p-3 border rounded-xl" rows={3}
+                      value={editFormData.observacion} onChange={e => setEditFormData({...editFormData, observacion: e.target.value})}/>
+                 </div>
+                 <div className="flex gap-3 pt-4">
+                    <button type="button" onClick={handleCloseEditModal} className="flex-1 py-3 border rounded-xl font-bold">Cancelar</button>
+                    <button type="submit" disabled={editLoading} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold flex justify-center items-center gap-2">
+                       {editLoading && <Loader2 className="animate-spin"/>} Guardar
+                    </button>
+                 </div>
+              </form>
+           </div>
+        </div>
       )}
       
       </div>

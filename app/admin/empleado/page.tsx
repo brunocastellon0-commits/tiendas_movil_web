@@ -5,11 +5,7 @@ import { createClient } from '@/utils/supabase/client'
 import { useFormPersistence } from '@/hooks/useFormPersistence'
 import { 
   Search, 
-  Plus, 
-  Filter, 
-  MoreHorizontal, 
   Users, 
-  Briefcase, 
   ShieldCheck, 
   AlertCircle,
   MapPin,
@@ -17,10 +13,12 @@ import {
   Trash2,
   X,
   Save,
-  Loader2
+  Loader2,
+  Briefcase
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
+// Definicion de tipos de datos
 type Employee = {
   id: string
   full_name: string
@@ -45,12 +43,14 @@ export default function EmployeesManagement() {
   const router = useRouter()
   const supabase = createClient()
   
+  // Estados de carga de datos
   const [employees, setEmployees] = useState<Employee[]>([])
   const [zones, setZones] = useState<Zone[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [mounted, setMounted] = useState(false)
   
+  // Estados del formulario
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState(false)
@@ -66,7 +66,6 @@ export default function EmployeesManagement() {
     email: '',
     phone: '',
     password: '',
-
     job_title: 'Preventista',
     zone_id: ''
   })
@@ -75,6 +74,7 @@ export default function EmployeesManagement() {
     setMounted(true)
   }, [])
 
+  // Carga inicial de datos desde Supabase
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -120,11 +120,13 @@ export default function EmployeesManagement() {
     }
   }
 
+  // Manejo del envio del formulario y sincronizacion
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
     setFormSuccess(false)
 
+    // Validaciones
     if (!formData.full_name || !formData.email || !formData.phone) {
       setFormError('Por favor completa todos los campos obligatorios.')
       return
@@ -149,7 +151,9 @@ export default function EmployeesManagement() {
 
     try {
       setFormLoading(true)
+      let newEmployeeId = editingId;
 
+      // 1. Logica de persistencia en Supabase (Cloud)
       if (isEditing && editingId) {
         const { error } = await supabase
           .from('employees')
@@ -163,15 +167,13 @@ export default function EmployeesManagement() {
           
         if (error) throw error
 
-        // Update Zone Assignment
+        // Actualizar asignacion de zona
         if ('zone_id' in formData) {
-          // First, clear any existing zone assignment for this employee
           await supabase
             .from('zonas')
             .update({ vendedor_id: null })
             .eq('vendedor_id', editingId)
 
-          // If a new zone is selected, assign it
           if (formData.zone_id) {
             await supabase
               .from('zonas')
@@ -179,14 +181,9 @@ export default function EmployeesManagement() {
               .eq('id', formData.zone_id)
           }
           
-          // Refresh zones to reflect changes
           const { data: updatedZones } = await supabase.from('zonas').select('*').order('codigo_zona', { ascending: true })
           if (updatedZones) setZones(updatedZones as any)
         }
-
-        if (error) throw error
-
-        setFormSuccess(true)
 
         setEmployees(employees.map(emp => 
           emp.id === editingId 
@@ -195,6 +192,7 @@ export default function EmployeesManagement() {
         ))
 
       } else {
+        // Creacion de nuevo usuario mediante Edge Function
         const { data, error: functionError } = await supabase.functions.invoke('create-user', {
           body: {
             email: formData.email,
@@ -206,35 +204,25 @@ export default function EmployeesManagement() {
         })
 
         if (functionError) {
-          if (data?.error) {
-            throw new Error(data.error)
-          }
+          if (data?.error) throw new Error(data.error)
           throw new Error(functionError.message || 'Error al conectar con el servidor')
         }
 
-        if (data?.error) {
-          throw new Error(data.error)
-        }
-
-        if (!data?.user) {
-          throw new Error('No se recibió información del usuario creado')
-        }
+        if (data?.error) throw new Error(data.error)
+        if (!data?.user) throw new Error('No se recibió información del usuario creado')
         
-        const newEmployeeId = data.user.id
+        newEmployeeId = data.user.id
         
-        // Handle Zone Assignment for New Employee
+        // Asignar zona al nuevo empleado
         if (formData.zone_id) {
            await supabase
             .from('zonas')
             .update({ vendedor_id: newEmployeeId })
             .eq('id', formData.zone_id)
-            
-           // Refresh zones
+           
            const { data: updatedZones } = await supabase.from('zonas').select('*').order('codigo_zona', { ascending: true })
            if (updatedZones) setZones(updatedZones as any)
         }
-
-        setFormSuccess(true)
 
         const { data: newEmployees } = await supabase
           .from('employees')
@@ -243,6 +231,34 @@ export default function EmployeesManagement() {
         if (newEmployees) setEmployees(newEmployees as any)
       }
 
+      // 2. Sincronizacion con SQL Server Local
+      // Se envia la entidad EMPLOYEE al endpoint maestro de sincronizacion
+      try {
+        const syncResponse = await fetch('/api/sync/master', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            entity: 'EMPLOYEE',
+            data: {
+              code: formData.email, // Usamos el email como identificador unico temporal
+              name: formData.full_name,
+              phone: formData.phone,
+              job_title: formData.job_title
+            }
+          }),
+        });
+
+        if (!syncResponse.ok) {
+          console.warn('Advertencia: Empleado guardado en nube pero la sincronizacion local fallo o esta pendiente.')
+        }
+      } catch (syncError) {
+        console.error('Error de red al intentar sincronizar empleado con SQL Server:', syncError)
+      }
+
+      // Finalizacion exitosa
+      setFormSuccess(true)
       clearForm()
       setIsEditing(false)
       setEditingId(null)
@@ -273,7 +289,6 @@ export default function EmployeesManagement() {
       email: employee.email,
       phone: employee.phone,
       password: '',
-
       job_title: employee.job_title || 'Preventista',
       zone_id: zones.find(z => z.vendedor_id === employee.id)?.id || ''
     })
@@ -311,7 +326,7 @@ export default function EmployeesManagement() {
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
       
-      {/* Patrón de rombos/diamantes armónico - MÁS VISIBLE */}
+      {/* Elementos decorativos de fondo */}
       <div className="fixed inset-0 z-0 pointer-events-none opacity-35" 
            style={{
              backgroundImage: `
@@ -333,7 +348,6 @@ export default function EmployeesManagement() {
            }}>
       </div>
       
-      {/* Patrón de puntos sutiles complementario */}
       <div className="fixed inset-0 z-0 pointer-events-none opacity-25" 
            style={{
              backgroundImage: `radial-gradient(circle at 2px 2px, rgba(20, 184, 166, 0.12) 1px, transparent 1px)`,
@@ -341,51 +355,20 @@ export default function EmployeesManagement() {
            }}>
       </div>
       
-      {/* Degradado superior suave */}
       <div className="fixed inset-0 z-0 bg-gradient-to-b from-white/40 via-transparent to-transparent pointer-events-none"></div>
       
-      {/* Círculos suaves con blur - Esquina superior izquierda */}
+      {/* Formas geometricas de fondo */}
       <div className="fixed -top-24 -left-24 w-96 h-96 bg-green-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
       <div className="fixed top-32 left-32 w-64 h-64 bg-emerald-300/20 rounded-full blur-2xl z-0 pointer-events-none"></div>
-      
-      {/* Círculos suaves - Esquina superior derecha */}
       <div className="fixed -top-32 -right-32 w-[500px] h-[500px] bg-teal-200/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      
-      {/* Círculo central flotante */}
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-100/20 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      
-      {/* Círculos suaves - Esquina inferior */}
       <div className="fixed -bottom-40 -left-20 w-[450px] h-[450px] bg-green-300/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
       <div className="fixed -bottom-20 -right-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
       
-      {/* Figuras geométricas decorativas - MÁS VISIBLES */}
-      {/* Superior derecha */}
-      <div className="fixed top-20 right-1/4 w-20 h-20 border-3 border-emerald-500/40 rounded-xl rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
-      <div className="fixed top-32 right-1/3 w-14 h-14 bg-green-400/15 rounded-lg -rotate-6 z-0 pointer-events-none"></div>
-      
-      {/* Superior izquierda */}
-      <div className="fixed top-40 left-1/4 w-16 h-16 border-3 border-teal-500/35 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-500/10"></div>
-      <div className="fixed top-56 left-1/3 w-12 h-12 bg-emerald-300/20 rotate-45 z-0 pointer-events-none"></div>
-      
-      {/* Centro izquierda */}
-      <div className="fixed top-1/2 left-16 w-24 h-24 border-3 border-green-500/40 rotate-45 z-0 pointer-events-none shadow-lg shadow-green-500/10"></div>
-      <div className="fixed top-1/2 left-32 w-10 h-10 bg-teal-400/20 rounded-lg -rotate-12 z-0 pointer-events-none"></div>
-      
-      {/* Centro derecha */}
-      <div className="fixed top-1/3 right-20 w-18 h-18 border-3 border-emerald-600/35 rounded-2xl rotate-45 z-0 pointer-events-none shadow-lg shadow-emerald-600/10"></div>
-      <div className="fixed top-2/3 right-32 w-22 h-22 border-3 border-green-400/40 rotate-12 rounded-lg z-0 pointer-events-none"></div>
-      
-      {/* Inferior izquierda */}
-      <div className="fixed bottom-1/3 left-20 w-16 h-16 border-3 border-teal-600/40 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-600/10"></div>
-      <div className="fixed bottom-1/4 left-40 w-14 h-14 bg-green-300/20 rounded-xl rotate-45 z-0 pointer-events-none"></div>
-      
-      {/* Inferior derecha */}
-      <div className="fixed bottom-20 right-1/4 w-20 h-20 border-3 border-emerald-500/45 rounded-lg -rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
-      <div className="fixed bottom-32 right-1/3 w-12 h-12 bg-teal-400/25 rotate-6 z-0 pointer-events-none"></div>
-      
-      {/* Contenido principal */}
+      {/* Contenido principal de la pagina */}
       <div className="relative z-10 space-y-6">
-      {/* HEADER - Paleta verde y blanco vibrante - STICKY para que siempre esté visible */}
+      
+      {/* Encabezado */}
       <div className="sticky top-0 z-50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-lg border-2 border-green-100 backdrop-blur-sm">
         <div>
           <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 bg-clip-text text-transparent">
@@ -395,10 +378,9 @@ export default function EmployeesManagement() {
         </div>
       </div>
 
-      {/* KPIs - Verde vibrante con blanco */}
+      {/* Tarjetas de Indicadores (KPIs) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
         
-        {/* Total Empleados - Verde principal */}
         <div className="group relative bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-green-400 hover:scale-105">
           <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="relative">
@@ -415,9 +397,6 @@ export default function EmployeesManagement() {
           </div>
         </div>
 
-
-
-        {/* Admins - Rojo acento vibrante */}
         <div className="group relative bg-gradient-to-br from-red-500 via-red-600 to-rose-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-red-400 hover:scale-105">
           <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="relative">
@@ -435,7 +414,7 @@ export default function EmployeesManagement() {
         </div>
       </div>
 
-      {/* FORMULARIO - Blanco con acentos verdes vibrantes */}
+      {/* Formulario de Registro/Edicion */}
       <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
         <div className="bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 px-8 py-6">
           <div className="flex items-center justify-between">
@@ -494,7 +473,6 @@ export default function EmployeesManagement() {
 
           <form onSubmit={handleSubmit} className="space-y-8">
             
-            {/* Datos Personales */}
             <div className="space-y-5">
               <div className="flex items-center gap-3 pb-3 border-b-4 border-green-500">
                 <div className="w-2 h-8 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full shadow-lg"></div>
@@ -551,7 +529,6 @@ export default function EmployeesManagement() {
               </div>
             </div>
 
-            {/* Cuenta y Acceso */}
             <div className="space-y-5">
               <div className="flex items-center gap-3 pb-3 border-b-4 border-green-500">
                 <div className="w-2 h-8 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full shadow-lg"></div>
@@ -567,7 +544,6 @@ export default function EmployeesManagement() {
                     Rol / Cargo <span className="text-red-500">*</span>
                   </label>
                   <div className="grid grid-cols-2 gap-4">
-                    {/* Preventista - Verde vibrante */}
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, job_title: 'Preventista' })}
@@ -581,7 +557,6 @@ export default function EmployeesManagement() {
                       <span className="text-sm font-black">Preventista</span>
                     </button>
 
-                    {/* Administrador - Rojo acento */}
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, job_title: 'Administrador' })}
@@ -616,7 +591,6 @@ export default function EmployeesManagement() {
                 )}
               </div>
 
-              {/* Zona (Visible solo para Preventistas) */}
               {(mounted && formData.job_title === 'Preventista') && (
                 <div className="space-y-5 pt-4">
                   <div className="flex items-center gap-3 pb-3 border-b-4 border-green-500">
@@ -641,7 +615,6 @@ export default function EmployeesManagement() {
                         const isAssigned = zone.vendedor_id !== null
                         const assignedToCurrent = zone.vendedor_id === (editingId || '')
                         
-                        // Show option if: Not assigned, OR Assigned to current employee being edited
                         if (!isAssigned || assignedToCurrent) {
                           return (
                             <option key={zone.id} value={zone.id}>
@@ -649,8 +622,6 @@ export default function EmployeesManagement() {
                             </option>
                           )
                         } else {
-                           // Optional: Show occupied zones as disabled?
-                           // Find who has it
                            const owner = employees.find(e => e.id === zone.vendedor_id)
                            return (
                              <option key={zone.id} value={zone.id} disabled className="text-gray-400">
@@ -668,7 +639,6 @@ export default function EmployeesManagement() {
               )}
             </div>
 
-            {/* Botones */}
             <div className="flex gap-4 pt-6 border-t-2 border-gray-100">
               <button
                 type="button"
@@ -704,7 +674,6 @@ export default function EmployeesManagement() {
         </div>
       </div>
 
-      {/* TABLA - Blanco con acentos verdes */}
       <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
         
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-5 border-b-2 border-green-200">

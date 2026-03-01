@@ -1,5 +1,6 @@
 import Sidebar from '@/components/ui/sidebar'
 import Header from '@/components/ui/header'
+import AutoSync from '@/components/AutoSync'
 
 export default function DashboardLayout({
   children,
@@ -24,6 +25,10 @@ export default function DashboardLayout({
           </div>
         </main>
       </div>
+
+      {/* Componente de Sincronización Automática */}
+      {/* Se ejecutará en segundo plano en todas las páginas del dashboard */}
+      <AutoSync />
     </div>
   )
 }

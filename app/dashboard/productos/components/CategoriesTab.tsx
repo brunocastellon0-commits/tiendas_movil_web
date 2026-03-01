@@ -15,7 +15,9 @@ import {
   Filter
 } from 'lucide-react'
 
-// Tipos TypeScript
+/**
+ * Definición del tipo Category
+ */
 type Category = {
   id: string
   empresa: string | null
@@ -28,6 +30,7 @@ type Category = {
 export default function CategoriesTab() {
   const supabase = createClient()
   
+  // Estados para datos y UI
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -49,10 +52,14 @@ export default function CategoriesTab() {
     marca: ''
   })
 
+  // Carga inicial
   useEffect(() => {
     fetchCategories()
   }, [])
 
+  /**
+   * Obtiene las categorías desde Supabase
+   */
   const fetchCategories = async () => {
     try {
       setLoading(true)
@@ -72,6 +79,18 @@ export default function CategoriesTab() {
     }
   }
 
+  /**
+   * MANEJA LOS CAMBIOS EN LOS INPUTS (Esta era la función que faltaba)
+   */
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value })
+  }
+
+  /**
+   * Maneja el guardado de la categoría.
+   * 1. Guarda en Supabase.
+   * 2. Envía la solicitud de sincronización al servidor local (SQL Server).
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
@@ -85,35 +104,51 @@ export default function CategoriesTab() {
     try {
       setFormLoading(true)
 
+      const categoryData = {
+        empresa: formData.empresa || null,
+        nombre_categoria: formData.nombre_categoria,
+        linea: formData.linea || null,
+        marca: formData.marca || null
+      }
+
+      // 1. Operación en Supabase
       if (isEditing && editingId) {
         const { error } = await supabase
           .from('categorias')
-          .update({
-            empresa: formData.empresa || null,
-            nombre_categoria: formData.nombre_categoria,
-            linea: formData.linea || null,
-            marca: formData.marca || null
-          })
+          .update(categoryData)
           .eq('id', editingId)
 
         if (error) throw error
-        setFormSuccess(true)
-
       } else {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('categorias')
-          .insert([{
-            empresa: formData.empresa || null,
-            nombre_categoria: formData.nombre_categoria,
-            linea: formData.linea || null,
-            marca: formData.marca || null
-          }])
-          .select()
+          .insert([categoryData])
 
         if (error) throw error
-        setFormSuccess(true)
       }
 
+      // 2. Sincronización con SQL Server (Puente)
+      try {
+        const syncResponse = await fetch('/api/sync/master', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            entity: 'CATEGORY', // Identificador para el switch del backend
+            data: categoryData
+          }),
+        });
+
+        if (!syncResponse.ok) {
+          console.warn('Advertencia: Categoría guardada en web, pendiente en local.')
+        }
+      } catch (syncError) {
+        console.error('Error de red al sincronizar categoría:', syncError)
+      }
+
+      // 3. Finalización exitosa
+      setFormSuccess(true)
       clearForm()
       setIsEditing(false)
       setEditingId(null)
@@ -287,7 +322,7 @@ export default function CategoriesTab() {
                   type="text"
                   name="empresa"
                   value={formData.empresa || ''}
-                  onChange={(e) => setFormData({ ...formData, empresa: e.target.value })}
+                  onChange={handleChange}
                   className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                   placeholder="Ej: Mi Empresa S.A."
                 />
@@ -301,7 +336,7 @@ export default function CategoriesTab() {
                   type="text"
                   name="nombre_categoria"
                   value={formData.nombre_categoria || ''}
-                  onChange={(e) => setFormData({ ...formData, nombre_categoria: e.target.value })}
+                  onChange={handleChange}
                   className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                   placeholder="Ej: Bebidas"
                   required
@@ -314,7 +349,7 @@ export default function CategoriesTab() {
                   type="text"
                   name="linea"
                   value={formData.linea || ''}
-                  onChange={(e) => setFormData({ ...formData, linea: e.target.value })}
+                  onChange={handleChange}
                   className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                   placeholder="Ej: Refrescos"
                 />
@@ -326,7 +361,7 @@ export default function CategoriesTab() {
                   type="text"
                   name="marca"
                   value={formData.marca || ''}
-                  onChange={(e) => setFormData({ ...formData, marca: e.target.value })}
+                  onChange={handleChange}
                   className="w-full px-4 py-3 text-sm border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                   placeholder="Ej: Coca Cola"
                 />
@@ -413,7 +448,7 @@ export default function CategoriesTab() {
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-16 text-center">
+                  <td colSpan={6} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center justify-center gap-3">
                       <Loader2 className="w-10 h-10 text-purple-600 animate-spin" />
                       <p className="text-gray-600 font-medium">Cargando categorías...</p>
@@ -422,7 +457,7 @@ export default function CategoriesTab() {
                 </tr>
               ) : filteredCategories.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-16 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-16 text-center text-gray-500">
                     No se encontraron categorías
                   </td>
                 </tr>

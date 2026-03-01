@@ -25,19 +25,19 @@ export default function EmployeesTab() {
   // --- Carga Inicial ---
   useEffect(() => {
     const fetchEmployees = async () => {
-      console.log('🔍 Cargando empleados...')
+      console.log(' Cargando empleados...')
       const { data, error } = await supabase.from('employees').select('id, full_name')
       
       if (error) {
-        console.error('❌ Error cargando empleados:', error)
+        console.error(' Error cargando empleados:', error)
         return
       }
       
-      console.log('✅ Empleados cargados:', data)
+      console.log(' Empleados cargados:', data)
       
       if (data) {
         setEmployees(data)
-        console.log('✅ Total de empleados:', data.length)
+        console.log(' Total de empleados:', data.length)
       }
     }
     fetchEmployees()
@@ -50,8 +50,8 @@ export default function EmployeesTab() {
     const fetchData = async () => {
       setLoading(true)
       
-      console.log('📊 Cargando pedidos para empleado:', selectedEmployee)
-      console.log('📅 Rango de fechas:', dateRange.start, 'a', dateRange.end)
+      console.log(' Cargando pedidos para empleado:', selectedEmployee)
+      console.log(' Rango de fechas:', dateRange.start, 'a', dateRange.end)
       
       try {
         // Query 1: Pedidos
@@ -81,13 +81,13 @@ export default function EmployeesTab() {
         const { data, error } = await query
 
         if (error) {
-          console.error('❌ Error cargando pedidos:', error)
+          console.error(' Error cargando pedidos:', error)
           throw error
         }
         
         const msg = selectedEmployee === 'ALL' 
-          ? `✅ Pedidos cargados de TODOS los empleados: ${data?.length || 0} pedidos`
-          : `✅ Pedidos cargados: ${data?.length || 0} pedidos`
+          ? ` Pedidos cargados de TODOS los empleados: ${data?.length || 0} pedidos`
+          : ` Pedidos cargados: ${data?.length || 0} pedidos`
         console.log(msg)
         setOrders((data as any) || [])
         

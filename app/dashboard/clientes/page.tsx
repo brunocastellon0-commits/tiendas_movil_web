@@ -18,7 +18,7 @@ import {
   FileText
 } from 'lucide-react'
 
-// --- 1. Tipos TypeScript ---
+// Tipos TypeScript
 type Client = {
   id: string
   code: string
@@ -34,7 +34,6 @@ type Client = {
   status: string // 'Vigente' | 'Suspendido'
 }
 
-// --- 2. Componente Principal ---
 export default function ClientsPage() {
   const supabase = createClient()
   
@@ -70,7 +69,7 @@ export default function ClientsPage() {
 
   const [formData, setFormData] = useState(initialFormState)
 
-  // --- Cargar Datos ---
+  // Cargar Datos
   useEffect(() => {
     const fetchClients = async () => {
       try {
@@ -92,7 +91,7 @@ export default function ClientsPage() {
     fetchClients()
   }, [])
 
-  // --- KPIs y Filtros ---
+  // KPIs y Filtros
   const filteredClients = useMemo(() => {
     return clients.filter(c => 
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -113,7 +112,7 @@ export default function ClientsPage() {
     return new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(amount)
   }
 
-  // --- Manejo del Formulario ---
+  // Manejo del Formulario
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
@@ -128,7 +127,7 @@ export default function ClientsPage() {
     }
   }
 
-  // Función GPS Web con alta precisión y validación
+  // Funcion GPS Web
   const handleCaptureGPS = () => {
     if (!navigator.geolocation) {
       alert('Tu navegador no soporta geolocalización')
@@ -136,7 +135,6 @@ export default function ClientsPage() {
     }
     setGpsLoading(true)
     
-    // Opciones para mayor precisión
     const options = {
       enableHighAccuracy: true,
       timeout: 10000,
@@ -148,16 +146,9 @@ export default function ClientsPage() {
         const lat = pos.coords.latitude
         const lon = pos.coords.longitude
         
-        console.log('📍 GPS Capturado:', { 
-          latitude: lat, 
-          longitude: lon,
-          accuracy: pos.coords.accuracy + 'm'
-        })
-        
-        // Validación básica: Cochabamba está aproximadamente en -17.4°, -66.1°
-        // Rango razonable: Lat: -18 a -16, Lon: -67 a -65
+        // Validacion basica Cochabamba
         if (lat < -18 || lat > -16 || lon < -67 || lon > -65) {
-          alert(`⚠️ Coordenadas fuera del rango esperado para Cochabamba:\nLat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}\n\n¿Estás seguro de continuar?`)
+          alert(`Coordenadas fuera del rango esperado para Cochabamba: Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}. ¿Estás seguro de continuar?`)
         }
         
         setFormData(prev => ({
@@ -168,7 +159,7 @@ export default function ClientsPage() {
         setGpsLoading(false)
       },
       (err) => {
-        console.error('❌ Error GPS:', err)
+        console.error('Error GPS:', err)
         alert('Error obteniendo ubicación: ' + err.message)
         setGpsLoading(false)
       },
@@ -192,16 +183,10 @@ export default function ClientsPage() {
 
       let location = null
       if (formData.latitude !== null && formData.longitude !== null) {
-        // Formato correcto con SRID para PostGIS geography
         location = `SRID=4326;POINT(${formData.longitude} ${formData.latitude})`
-        
-        console.log('💾 Guardando ubicación:', {
-          latitude: formData.latitude,
-          longitude: formData.longitude,
-          wkt: location
-        })
       }
 
+      // Preparar payload para Supabase
       const payload = {
         code: formData.code,
         name: formData.name,
@@ -215,6 +200,7 @@ export default function ClientsPage() {
         vendor_id: user?.id 
       }
 
+      // 1. Guardar en Supabase
       if (isEditing && editingId) {
         const { error } = await supabase
           .from('clients')
@@ -231,6 +217,26 @@ export default function ClientsPage() {
         if (error) throw error
 
         if (data) setClients([data[0] as any, ...clients])
+      }
+
+      // 2. Sincronizar con SQL Server Local (Puente)
+      try {
+        const syncResponse = await fetch('/api/sync/master', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            entity: 'CLIENT',
+            data: payload
+          }),
+        });
+
+        if (!syncResponse.ok) {
+          console.warn('Advertencia: Cliente guardado en la nube pero pendiente de sincronización local.')
+        }
+      } catch (syncError) {
+        console.error('Error de red al sincronizar cliente:', syncError)
       }
 
       setFormSuccess(true)
@@ -288,29 +294,16 @@ export default function ClientsPage() {
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
       
-      {/* Patrón de rombos/diamantes armónico - MÁS VISIBLE */}
+      {/* Patrones de fondo */}
       <div className="fixed inset-0 z-0 pointer-events-none opacity-35" 
            style={{
              backgroundImage: `
-               repeating-linear-gradient(
-                 45deg, 
-                 transparent, 
-                 transparent 35px, 
-                 rgba(16, 185, 129, 0.25) 35px, 
-                 rgba(16, 185, 129, 0.25) 39px
-               ),
-               repeating-linear-gradient(
-                 -45deg, 
-                 transparent, 
-                 transparent 35px, 
-                 rgba(16, 185, 129, 0.25) 35px, 
-                 rgba(16, 185, 129, 0.25) 39px
-               )
+               repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(16, 185, 129, 0.25) 35px, rgba(16, 185, 129, 0.25) 39px),
+               repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(16, 185, 129, 0.25) 35px, rgba(16, 185, 129, 0.25) 39px)
              `,
            }}>
       </div>
       
-      {/* Patrón de puntos sutiles complementario */}
       <div className="fixed inset-0 z-0 pointer-events-none opacity-25" 
            style={{
              backgroundImage: `radial-gradient(circle at 2px 2px, rgba(20, 184, 166, 0.12) 1px, transparent 1px)`,
@@ -318,52 +311,17 @@ export default function ClientsPage() {
            }}>
       </div>
       
-      {/* Degradado superior suave */}
       <div className="fixed inset-0 z-0 bg-gradient-to-b from-white/40 via-transparent to-transparent pointer-events-none"></div>
       
-      {/* Círculos suaves con blur - Esquina superior izquierda */}
+      {/* Elementos decorativos */}
       <div className="fixed -top-24 -left-24 w-96 h-96 bg-green-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
       <div className="fixed top-32 left-32 w-64 h-64 bg-emerald-300/20 rounded-full blur-2xl z-0 pointer-events-none"></div>
-      
-      {/* Círculos suaves - Esquina superior derecha */}
       <div className="fixed -top-32 -right-32 w-[500px] h-[500px] bg-teal-200/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      
-      {/* Círculo central flotante */}
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-100/20 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      
-      {/* Círculos suaves - Esquina inferior */}
-      <div className="fixed -bottom-40 -left-20 w-[450px] h-[450px] bg-green-300/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      <div className="fixed -bottom-20 -right-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      
-      {/* Figuras geométricas decorativas - MÁS VISIBLES */}
-      {/* Superior derecha */}
-      <div className="fixed top-20 right-1/4 w-20 h-20 border-3 border-emerald-500/40 rounded-xl rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
-      <div className="fixed top-32 right-1/3 w-14 h-14 bg-green-400/15 rounded-lg -rotate-6 z-0 pointer-events-none"></div>
-      
-      {/* Superior izquierda */}
-      <div className="fixed top-40 left-1/4 w-16 h-16 border-3 border-teal-500/35 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-500/10"></div>
-      <div className="fixed top-56 left-1/3 w-12 h-12 bg-emerald-300/20 rotate-45 z-0 pointer-events-none"></div>
-      
-      {/* Centro izquierda */}
-      <div className="fixed top-1/2 left-16 w-24 h-24 border-3 border-green-500/40 rotate-45 z-0 pointer-events-none shadow-lg shadow-green-500/10"></div>
-      <div className="fixed top-1/2 left-32 w-10 h-10 bg-teal-400/20 rounded-lg -rotate-12 z-0 pointer-events-none"></div>
-      
-      {/* Centro derecha */}
-      <div className="fixed top-1/3 right-20 w-18 h-18 border-3 border-emerald-600/35 rounded-2xl rotate-45 z-0 pointer-events-none shadow-lg shadow-emerald-600/10"></div>
-      <div className="fixed top-2/3 right-32 w-22 h-22 border-3 border-green-400/40 rotate-12 rounded-lg z-0 pointer-events-none"></div>
-      
-      {/* Inferior izquierda */}
-      <div className="fixed bottom-1/3 left-20 w-16 h-16 border-3 border-teal-600/40 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-600/10"></div>
-      <div className="fixed bottom-1/4 left-40 w-14 h-14 bg-green-300/20 rounded-xl rotate-45 z-0 pointer-events-none"></div>
-      
-      {/* Inferior derecha */}
-      <div className="fixed bottom-20 right-1/4 w-20 h-20 border-3 border-emerald-500/45 rounded-lg -rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
-      <div className="fixed bottom-32 right-1/3 w-12 h-12 bg-teal-400/25 rotate-6 z-0 pointer-events-none"></div>
       
       {/* Contenido principal */}
       <div className="relative z-10 space-y-6">
       
-      {/* HEADER - Paleta verde vibrante */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-lg border-2 border-green-100">
         <div>
           <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 bg-clip-text text-transparent">
@@ -373,10 +331,10 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* KPI CARDS - Verde vibrante con acentos rojos */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
         
-        {/* KPI 1: Total Clientes - Verde principal */}
+        {/* Total Clientes */}
         <div className="group relative bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-green-400 hover:scale-105">
           <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="relative">
@@ -393,7 +351,7 @@ export default function ClientsPage() {
           </div>
         </div>
 
-        {/* KPI 2: Saldo en Calle - Rojo vibrante */}
+        {/* Saldo en Calle */}
         <div className="group relative bg-gradient-to-br from-red-500 via-red-600 to-rose-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-red-400 hover:scale-105">
           <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="relative">
@@ -410,7 +368,7 @@ export default function ClientsPage() {
           </div>
         </div>
 
-        {/* KPI 3: Activos - Verde secundario vibrante */}
+        {/* Activos */}
         <div className="group relative bg-gradient-to-br from-emerald-400 via-green-400 to-teal-500 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-emerald-300 hover:scale-105">
           <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div className="relative">
@@ -428,7 +386,7 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* FORMULARIO - Blanco con acentos verdes vibrantes */}
+      {/* Formulario */}
       <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
         <div className="bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 px-8 py-6">
           <div className="flex items-center justify-between">
@@ -599,38 +557,38 @@ export default function ClientsPage() {
                   />
                 </div>
 
-                {/* Módulo GPS - Verde vibrante */}
+                {/* Módulo GPS */}
                 <div className="space-y-2 md:col-span-2 bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-2xl border-2 border-green-200 shadow-md">
                     <div className="flex justify-between items-center mb-3">
                         <label className="text-base font-black text-gray-900">Geolocalización</label>
                         {formData.latitude && (
                             <span className="text-xs text-green-700 font-black bg-green-100 px-4 py-2 rounded-full border-2 border-green-300 shadow-sm">
-                                ✓ GPS Capturado
+                              ✓ GPS Capturado
                             </span>
                         )}
                     </div>
                     
                     <div className="flex gap-4 items-center">
-                         <div className="flex-1 text-sm text-black font-mono bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm">
+                          <div className="flex-1 text-sm text-black font-mono bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm">
                             Lat: {formData.latitude?.toFixed(6) || '---'}<br/>
                             Lon: {formData.longitude?.toFixed(6) || '---'}
-                         </div>
-                         <button
-                           type="button"
-                           onClick={handleCaptureGPS}
-                           disabled={gpsLoading}
-                           className="flex items-center gap-2 px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 font-bold text-sm transition-all shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                         >
-                            {gpsLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <MapPin className="w-5 h-5" />}
-                            Capturar
-                         </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleCaptureGPS}
+                            disabled={gpsLoading}
+                            className="flex items-center gap-2 px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 font-bold text-sm transition-all shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                          >
+                             {gpsLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <MapPin className="w-5 h-5" />}
+                             Capturar
+                          </button>
                     </div>
                 </div>
 
               </div>
             </div>
 
-            {/* BOTONES DE ACCIÓN */}
+            {/* BOTONES */}
             <div className="flex gap-4 pt-6 border-t-2 border-gray-100">
               <button
                 type="button"
@@ -667,10 +625,10 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* TABLA DE CLIENTES - Diseño vibrante */}
+      {/* TABLA DE CLIENTES */}
       <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
         
-        {/* Toolbar de búsqueda */}
+        {/* Toolbar */}
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-5 border-b-2 border-green-200">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <div className="relative flex-1 w-full max-w-2xl">
@@ -739,7 +697,7 @@ export default function ClientsPage() {
                                </span>
                                {client.business_name && (
                                   <span className="text-xs text-gray-500 flex items-center gap-1">
-                                      <FileText className="w-3 h-3"/> {client.business_name}
+                                       <FileText className="w-3 h-3"/> {client.business_name}
                                   </span>
                                )}
                           </div>
@@ -766,22 +724,22 @@ export default function ClientsPage() {
                     </td>
 
                     <td className="px-6 py-6 text-right">
-                       <span className={`text-sm font-black ${client.current_balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                          {formatCurrency(client.current_balance)}
-                       </span>
+                        <span className={`text-sm font-black ${client.current_balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                           {formatCurrency(client.current_balance)}
+                        </span>
                     </td>
 
                     <td className="px-6 py-6 text-center">
-                       <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black shadow-md ${
-                         client.status === 'Vigente'
-                           ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-300' 
-                           : 'bg-red-100 text-red-700 border-2 border-red-300'
-                       }`}>
-                         <div className={`w-2.5 h-2.5 rounded-full ${
-                           client.status === 'Vigente' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
-                         }`}></div>
-                         {client.status}
-                       </div>
+                        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black shadow-md ${
+                          client.status === 'Vigente'
+                            ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-300' 
+                            : 'bg-red-100 text-red-700 border-2 border-red-300'
+                        }`}>
+                          <div className={`w-2.5 h-2.5 rounded-full ${
+                            client.status === 'Vigente' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
+                          }`}></div>
+                          {client.status}
+                        </div>
                     </td>
 
                     <td className="px-6 py-6">
@@ -815,3 +773,4 @@ export default function ClientsPage() {
     </div>
   )
 }
+

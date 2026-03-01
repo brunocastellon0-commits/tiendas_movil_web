@@ -14,7 +14,9 @@ import {
   Loader2
 } from 'lucide-react'
 
-// Tipos TypeScript
+/**
+ * Definición de tipos para Categorías y Proveedores
+ */
 type Category = {
   id: string
   nombre_categoria: string
@@ -53,11 +55,13 @@ type Provider = {
 export default function ProvidersTab() {
   const supabase = createClient()
   
+  // Estados para manejo de datos
   const [providers, setProviders] = useState<Provider[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   
+  // Estados para manejo del formulario
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState(false)
@@ -95,10 +99,14 @@ export default function ProvidersTab() {
     categoria_id: ''
   })
 
+  // Carga inicial de datos
   useEffect(() => {
     fetchData()
   }, [])
 
+  /**
+   * Obtiene la lista de proveedores y categorías desde Supabase
+   */
   const fetchData = async () => {
     try {
       setLoading(true)
@@ -133,6 +141,10 @@ export default function ProvidersTab() {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
+  /**
+   * Maneja el envío del formulario.
+   * Guarda en Supabase y luego sincroniza con SQL Server local.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
@@ -173,6 +185,7 @@ export default function ProvidersTab() {
         categoria_id: formData.categoria_id || null
       }
 
+      // 1. Operación en Supabase (Nube)
       if (isEditing && editingId) {
         const { error } = await supabase
           .from('proveedores')
@@ -180,17 +193,37 @@ export default function ProvidersTab() {
           .eq('id', editingId)
 
         if (error) throw error
-        setFormSuccess(true)
-
       } else {
         const { error } = await supabase
           .from('proveedores')
           .insert([providerData])
 
         if (error) throw error
-        setFormSuccess(true)
       }
 
+      // 2. Operación de Sincronización (Puente a SQL Server Local)
+      try {
+        const syncResponse = await fetch('/api/sync/master', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            entity: 'PROVIDER',
+            data: providerData
+          }),
+        });
+
+        if (!syncResponse.ok) {
+          console.warn('Advertencia: El proveedor se guardó en la nube pero falló la sincronización local.')
+        }
+      } catch (syncError) {
+        console.error('Error de red al intentar sincronizar con SQL Server:', syncError)
+        // No lanzamos el error para no bloquear la experiencia de usuario si Supabase funcionó
+      }
+
+      // 3. Finalización exitosa
+      setFormSuccess(true)
       clearForm()
       setIsEditing(false)
       setEditingId(null)

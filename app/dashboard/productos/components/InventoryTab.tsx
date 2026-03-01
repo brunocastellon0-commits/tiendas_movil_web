@@ -15,7 +15,7 @@ import {
   Loader2
 } from 'lucide-react'
 
-// Tipos TypeScript
+// Definicion de tipos TypeScript
 type Category = {
   id: string
   nombre_categoria: string
@@ -60,7 +60,7 @@ type Product = {
   proveedor: Provider | null
 }
 
-// Componente de Stock Visual
+// Componente para visualizar el nivel de stock
 const StockCell = ({ current, min, max }: { current: number, min: number, max: number }) => {
   let colorClass = 'bg-green-500'
   let statusText = 'Óptimo'
@@ -111,12 +111,14 @@ const StockCell = ({ current, min, max }: { current: number, min: number, max: n
 export default function InventoryTab() {
   const supabase = createClient()
   
+  // Estados de datos
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   
+  // Estados de formulario
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState(false)
@@ -151,6 +153,7 @@ export default function InventoryTab() {
     precios_volumen: 'false'
   })
 
+  // Carga inicial de datos desde Supabase
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -228,6 +231,10 @@ export default function InventoryTab() {
     }
   }
 
+  /**
+   * Maneja el envio del formulario.
+   * Guarda en Supabase y sincroniza con SQL Server local.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
@@ -246,89 +253,80 @@ export default function InventoryTab() {
     try {
       setFormLoading(true)
 
+      const productPayload = {
+        codigo_producto: formData.codigo_producto,
+        nombre_producto: formData.nombre_producto,
+        categoria_id: formData.categoria_id || null,
+        proveedor_id: formData.proveedor_id || null,
+        precio_base_venta: parseFloat(formData.precio_base_venta),
+        stock_actual: parseInt(formData.stock_actual) || 0,
+        stock_min: parseInt(formData.stock_min) || 0,
+        stock_max: parseInt(formData.stock_max) || 100,
+        unidad_base_venta: formData.unidad_base_venta,
+        estado: formData.estado,
+        observacion: formData.observacion || null,
+        extra_1: formData.extra_1 || null,
+        comision: formData.comision ? parseFloat(formData.comision) : null,
+        comision2: formData.comision2 ? parseFloat(formData.comision2) : null,
+        tipo: formData.tipo || null,
+        peso_bruto: formData.peso_bruto ? parseFloat(formData.peso_bruto) : null,
+        activo: formData.activo === 'true',
+        kg_unidad: formData.kg_unidad ? parseFloat(formData.kg_unidad) : null,
+        descuento_volumen: formData.descuento_volumen === 'true',
+        descuento_temporada: formData.descuento_temporada === 'true',
+        precios_volumen: formData.precios_volumen === 'true'
+      }
+
+      // 1. Operacion en Supabase
       if (isEditing && editingId) {
         const { error } = await supabase
           .from('productos')
-          .update({
-            codigo_producto: formData.codigo_producto,
-            nombre_producto: formData.nombre_producto,
-            categoria_id: formData.categoria_id || null,
-            proveedor_id: formData.proveedor_id || null,
-            precio_base_venta: parseFloat(formData.precio_base_venta),
-            stock_actual: parseInt(formData.stock_actual) || 0,
-            stock_min: parseInt(formData.stock_min) || 0,
-            stock_max: parseInt(formData.stock_max) || 100,
-            unidad_base_venta: formData.unidad_base_venta,
-            estado: formData.estado,
-            observacion: formData.observacion || null,
-            extra_1: formData.extra_1 || null,
-            comision: formData.comision ? parseFloat(formData.comision) : null,
-            comision2: formData.comision2 ? parseFloat(formData.comision2) : null,
-            tipo: formData.tipo || null,
-            peso_bruto: formData.peso_bruto ? parseFloat(formData.peso_bruto) : null,
-            activo: formData.activo === 'true',
-            kg_unidad: formData.kg_unidad ? parseFloat(formData.kg_unidad) : null,
-            descuento_volumen: formData.descuento_volumen === 'true',
-            descuento_temporada: formData.descuento_temporada === 'true',
-            precios_volumen: formData.precios_volumen === 'true'
-          })
+          .update(productPayload)
           .eq('id', editingId)
 
         if (error) throw error
-
-        setFormSuccess(true)
-        
-        const { data: updatedProducts } = await supabase
-          .from('productos')
-          .select(`
-            *,
-            categoria:categorias (id, nombre_categoria),
-            proveedor:proveedores (id, nombre, razon_social)
-          `)
-          .order('created_at', { ascending: false })
-        
-        if (updatedProducts) setProducts(updatedProducts as any)
-
       } else {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('productos')
-          .insert([{
-            codigo_producto: formData.codigo_producto,
-            nombre_producto: formData.nombre_producto,
-            categoria_id: formData.categoria_id || null,
-            proveedor_id: formData.proveedor_id || null,
-            precio_base_venta: parseFloat(formData.precio_base_venta),
-            stock_actual: parseInt(formData.stock_actual) || 0,
-            stock_min: parseInt(formData.stock_min) || 0,
-            stock_max: parseInt(formData.stock_max) || 100,
-            unidad_base_venta: formData.unidad_base_venta,
-            estado: formData.estado,
-            observacion: formData.observacion || null,
-            extra_1: formData.extra_1 || null,
-            comision: formData.comision ? parseFloat(formData.comision) : null,
-            comision2: formData.comision2 ? parseFloat(formData.comision2) : null,
-            tipo: formData.tipo || null,
-            peso_bruto: formData.peso_bruto ? parseFloat(formData.peso_bruto) : null,
-            activo: formData.activo === 'true',
-            kg_unidad: formData.kg_unidad ? parseFloat(formData.kg_unidad) : null,
-            descuento_volumen: formData.descuento_volumen === 'true',
-            descuento_temporada: formData.descuento_temporada === 'true',
-            precios_volumen: formData.precios_volumen === 'true'
-          }])
-          .select(`
-            *,
-            categoria:categorias (id, nombre_categoria),
-            proveedor:proveedores (id, nombre, razon_social)
-          `)
+          .insert([productPayload])
 
         if (error) throw error
-
-        setFormSuccess(true)
-        
-        if (data && data.length > 0) {
-          setProducts([data[0] as any, ...products])
-        }
       }
+
+      // 2. Sincronizacion con SQL Server Local (Puente)
+      try {
+        const syncResponse = await fetch('/api/sync/master', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            entity: 'PRODUCT',
+            data: productPayload
+          }),
+        });
+
+        if (!syncResponse.ok) {
+          console.warn('Producto guardado en nube pero pendiente de sincronizacion local.')
+        }
+      } catch (syncError) {
+        console.error('Error de red en sincronizacion:', syncError)
+      }
+
+      // 3. Finalizacion exitosa
+      setFormSuccess(true)
+      
+      // Recargar datos para reflejar cambios
+      const { data: updatedProducts } = await supabase
+        .from('productos')
+        .select(`
+          *,
+          categoria:categorias (id, nombre_categoria),
+          proveedor:proveedores (id, nombre, razon_social)
+        `)
+        .order('created_at', { ascending: false })
+      
+      if (updatedProducts) setProducts(updatedProducts as any)
 
       clearForm()
       setIsEditing(false)
@@ -569,9 +567,7 @@ export default function InventoryTab() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700">Proveed
-
-or</label>
+                  <label className="block text-sm font-semibold text-gray-700">Proveedor</label>
                   <select
                     name="proveedor_id"
                     value={formData.proveedor_id}
@@ -1053,16 +1049,16 @@ or</label>
 
                     {/* Estado */}
                     <td className="px-4 py-4 text-center">
-                       <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold border ${
-                         product.estado === 'Activo' || product.estado === 'true'
-                           ? 'bg-green-100 text-green-700 border-green-200' 
-                           : 'bg-gray-100 text-gray-500 border-gray-200'
-                       }`}>
-                         <div className={`w-2 h-2 rounded-full ${
-                           product.estado === 'Activo' || product.estado === 'true' ? 'bg-green-500' : 'bg-gray-400'
-                         }`}></div>
-                         {product.estado === 'true' ? 'Activo' : product.estado}
-                       </div>
+                        <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold border ${
+                          product.estado === 'Activo' || product.estado === 'true'
+                            ? 'bg-green-100 text-green-700 border-green-200' 
+                            : 'bg-gray-100 text-gray-500 border-gray-200'
+                        }`}>
+                          <div className={`w-2 h-2 rounded-full ${
+                            product.estado === 'Activo' || product.estado === 'true' ? 'bg-green-500' : 'bg-gray-400'
+                          }`}></div>
+                          {product.estado === 'true' ? 'Activo' : product.estado}
+                        </div>
                     </td>
 
                     {/* Acciones */}
@@ -1106,4 +1102,3 @@ or</label>
     </>
   )
 }
-
