@@ -7,7 +7,7 @@ const sqlConfig: sql.config = {
   server: process.env.SQL_SERVER_TUNNEL || '', // URL de Cloudflare
   port: 1433,
   options: {
-    encrypt: true, // Obligatorio para conexiones externas/túneles
+    encrypt: false, // <-- CLAVE: Apagado para evitar el error de SSL con SQL Server
     trustServerCertificate: true,
   },
   pool: {
