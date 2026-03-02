@@ -17,30 +17,38 @@ export async function GET() {
     if (!pullResponse.ok) throw new Error("La Mini-API de la oficina no respondió.");
     const pullData = await pullResponse.json();
 
-    // --- ZONAS ---
-    if (pullData.zones?.length > 0) {
-      const data = pullData.zones.map((z: any) => ({
-        legacy_id: z.idz || z.idzon,
-        codigo_zona: String(z.idz || z.idzon || ''),
-        name: z.zonnom || z.zonom || 'Ruta'
-      }));
-      const { error } = await supabase.from('zones').upsert(data, { onConflict: 'legacy_id' });
-      if (error) console.error('zones error:', error.message);
-      results.push({ tabla: 'zones', procesados: data.length, error: error?.message || null });
-    }
+// --- ZONAS ---
+if (pullData.zones?.length > 0) {
+  const data = pullData.zones.map((z: any) => ({
+    legacy_id: z.idz || z.idzon,
+    codigo_zona: String(z.idz || z.idzon || ''),
+    name: z.zonnom || z.zonom || 'Ruta'
+    // NO incluir id, Supabase lo genera con gen_random_uuid()
+  }));
+  const { error } = await supabase.from('zones').upsert(data, { 
+    onConflict: 'legacy_id',
+    ignoreDuplicates: false 
+  });
+  if (error) console.error('zones error:', error.message);
+  results.push({ tabla: 'zones', procesados: data.length, error: error?.message || null });
+}
 
-    // --- EMPLEADOS ---
-    if (pullData.employees?.length > 0) {
-      const data = pullData.employees.map((e: any) => ({
-        legacy_id: e.idemp,
-        full_name: (e.empnom || 'Sin Nombre').trim(),
-        email: e.empemail?.includes('@') ? e.empemail.trim() : `vendedor_${e.idemp}@tiendasmovil.com`,
-        status: 'Activo'
-      }));
-      const { error } = await supabase.from('employees').upsert(data, { onConflict: 'legacy_id' });
-      if (error) console.error('employees error:', error.message);
-      results.push({ tabla: 'employees', procesados: data.length, error: error?.message || null });
-    }
+// --- EMPLEADOS ---
+if (pullData.employees?.length > 0) {
+  const data = pullData.employees.map((e: any) => ({
+    legacy_id: e.idemp,
+    full_name: (e.empnom || 'Sin Nombre').trim(),
+    email: e.empemail?.includes('@') ? e.empemail.trim() : `vendedor_${e.idemp}@tiendasmovil.com`,
+    status: 'Activo'
+    // NO incluir id, Supabase lo genera con gen_random_uuid()
+  }));
+  const { error } = await supabase.from('employees').upsert(data, { 
+    onConflict: 'legacy_id',
+    ignoreDuplicates: false
+  });
+  if (error) console.error('employees error:', error.message);
+  results.push({ tabla: 'employees', procesados: data.length, error: error?.message || null });
+}
 
     // --- CATEGORÍAS ---
     if (pullData.categories?.length > 0) {
