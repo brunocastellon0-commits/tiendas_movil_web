@@ -3,105 +3,71 @@ import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
-type SyncResult = { 
-  tabla: string; 
-  direccion: 'SQL→Supabase' | 'Supabase→SQL'; 
-  procesados: number; 
-  errores: number; 
-  mensaje: string; 
-};
-
 export async function GET() {
-  const results: SyncResult[] = [];
-  
+  const results: any[] = [];
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!, 
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
     const API_OFICINA = process.env.NEXT_PUBLIC_API_OFICINA || 'https://db-sql.tiendasmovil.com';
-    const batchSize = 100; // Para no saturar la conexión con los 8000 clientes
+    const batchSize = 100;
 
-    // ==================================================================
-    // BLOQUE A: SOLICITAR DATOS A LA OFICINA (PULL)
-    // ==================================================================
+    // 1. Pedir datos a la oficina
     const pullResponse = await fetch(`${API_OFICINA}/api/pull`);
-    if (!pullResponse.ok) throw new Error(`La oficina no responde: ${pullResponse.status}`);
+    if (!pullResponse.ok) throw new Error("La Mini-API de la oficina no respondió.");
     const pullData = await pullResponse.json();
 
-    // 1. ZONAS / RUTAS
+    // --- 2. SINCRONIZAR ZONAS (RUTAS) ---
     if (pullData.zones?.length > 0) {
-      const toUpsert = pullData.zones.map((z: any) => ({
-        legacy_id: z.idzon || z.idz,
+      const data = pullData.zones.map((z: any) => ({
+        legacy_id: z.idz || z.idzon,
         name: z.zonnom || z.zonom || 'Ruta'
       }));
-      await supabase.from('zones').upsert(toUpsert, { onConflict: 'legacy_id' });
-      results.push({ tabla: 'zones', direccion: 'SQL→Supabase', procesados: toUpsert.length, errores: 0, mensaje: 'Zonas listas' });
+      await supabase.from('zones').upsert(data, { onConflict: 'legacy_id' });
+      results.push({ tabla: 'zones', procesados: data.length });
     }
 
-    // 2. EMPLEADOS
+    // --- 3. SINCRONIZAR EMPLEADOS ---
     if (pullData.employees?.length > 0) {
-      const toUpsert = pullData.employees.map((e: any) => ({
+      const data = pullData.employees.map((e: any) => ({
         legacy_id: e.idemp,
-        full_name: e.empnom?.trim() || 'Sin Nombre',
+        full_name: (e.empnom || 'Sin Nombre').trim(),
         email: e.empemail?.includes('@') ? e.empemail.trim() : `vendedor_${e.idemp}@tiendasmovil.com`,
         status: 'Activo'
       }));
-      await supabase.from('employees').upsert(toUpsert, { onConflict: 'legacy_id' });
-      results.push({ tabla: 'employees', direccion: 'SQL→Supabase', procesados: toUpsert.length, errores: 0, mensaje: 'Empleados listos' });
+      await supabase.from('employees').upsert(data, { onConflict: 'legacy_id' });
+      results.push({ tabla: 'employees', procesados: data.length });
     }
 
-    // 3. CATEGORÍAS
+    // --- 4. SINCRONIZAR CATEGORÍAS ---
     if (pullData.categories?.length > 0) {
-      const toUpsert = pullData.categories.map((c: any) => ({
+      const data = pullData.categories.map((c: any) => ({
         legacy_id: c.idlinea,
-        nombre_categoria: c.linnom?.trim() || '',
-        codigo_categoria: c.lincod?.trim() || ''
+        nombre_categoria: (c.linnom || '').trim()
       }));
-      for (let i = 0; i < toUpsert.length; i += batchSize) {
-        await supabase.from('categorias').upsert(toUpsert.slice(i, i + batchSize), { onConflict: 'legacy_id' });
-      }
-      results.push({ tabla: 'categorias', direccion: 'SQL→Supabase', procesados: toUpsert.length, errores: 0, mensaje: 'Categorías listas' });
+      await supabase.from('categorias').upsert(data, { onConflict: 'legacy_id' });
+      results.push({ tabla: 'categorias', procesados: data.length });
     }
 
-    // 4. PROVEEDORES
-    if (pullData.providers?.length > 0) {
-      const toUpsert = pullData.providers.map((p: any) => ({
-        legacy_id: p.idprv,
-        codigo: p.prvcod?.trim() || '',
-        nombre: p.prvnom?.trim() || '',
-        razon_social: p.prvraz?.trim() || '',
-        nit_ci: p.prvnit?.trim() || '',
-        direccion: p.prvdir?.trim() || '',
-        telefono: p.prvtel?.trim() || ''
-      }));
-      for (let i = 0; i < toUpsert.length; i += batchSize) {
-        await supabase.from('proveedores').upsert(toUpsert.slice(i, i + batchSize), { onConflict: 'legacy_id' });
-      }
-      results.push({ tabla: 'proveedores', direccion: 'SQL→Supabase', procesados: toUpsert.length, errores: 0, mensaje: 'Proveedores listos' });
-    }
-
-    // 5. PRODUCTOS
+    // --- 5. SINCRONIZAR PRODUCTOS ---
     if (pullData.products?.length > 0) {
-      const toUpsert = pullData.products.map((p: any) => ({
-        codigo_producto: p.prdcod?.trim() || '',
-        nombre_producto: p.prdnom?.trim() || '',
+      const data = pullData.products.map((p: any) => ({
+        legacy_id: p.idprd,
+        codigo_producto: p.prdcod?.trim(),
+        nombre_producto: p.prdnom?.trim(),
         precio_base_venta: p.prdpoficial || 0,
-        stock_actual: p.prdstmax || 0,
-        estado: 'Activo'
+        stock_actual: p.prdstmax || 0
       }));
-      for (let i = 0; i < toUpsert.length; i += batchSize) {
-        await supabase.from('productos').upsert(toUpsert.slice(i, i + batchSize), { onConflict: 'codigo_producto' });
+      for (let i = 0; i < data.length; i += batchSize) {
+        await supabase.from('productos').upsert(data.slice(i, i + batchSize), { onConflict: 'codigo_producto' });
       }
-      results.push({ tabla: 'productos', direccion: 'SQL→Supabase', procesados: toUpsert.length, errores: 0, mensaje: 'Productos listos' });
+      results.push({ tabla: 'productos', procesados: data.length });
     }
 
-    // 6. CLIENTES (Vincular con UUIDs)
+    // --- 6. SINCRONIZAR CLIENTES (Procesamiento por lotes de 100) ---
     if (pullData.clients?.length > 0) {
       const { data: sbZones } = await supabase.from('zones').select('id, legacy_id');
       const { data: sbEmps } = await supabase.from('employees').select('id, legacy_id');
-      
-      const toUpsert = pullData.clients.map((c: any) => ({
+
+      const data = pullData.clients.map((c: any) => ({
         legacy_id: c.idcli,
         code: c.clicod?.trim(),
         name: c.clinom?.trim(),
@@ -111,21 +77,17 @@ export async function GET() {
         status: 'Vigente'
       }));
 
-      for (let i = 0; i < toUpsert.length; i += batchSize) {
-        await supabase.from('clients').upsert(toUpsert.slice(i, i + batchSize), { onConflict: 'legacy_id' });
+      for (let i = 0; i < data.length; i += batchSize) {
+        await supabase.from('clients').upsert(data.slice(i, i + batchSize), { onConflict: 'legacy_id' });
       }
-      results.push({ tabla: 'clients', direccion: 'SQL→Supabase', procesados: toUpsert.length, errores: 0, mensaje: 'Clientes listos' });
+      results.push({ tabla: 'clients', procesados: data.length });
     }
 
-    // ==================================================================
-    // BLOQUE B: ENVIAR TRANSACCIONES A LA OFICINA (PUSH)
-    // ==================================================================
-    
-    // B1. Pedidos
+    // --- 7. PUSH: ENVIAR PEDIDOS (VENTAS) DE SUPABASE A LA OFICINA ---
     const { data: pendingOrders } = await supabase.from('pedidos')
       .select(`*, clients:clients_id ( legacy_id ), detalle_pedido ( producto_id, cantidad, precio_unitario, productos:producto_id ( codigo_producto ) )`)
-      .is('legacy_id', null).eq('estado', 'Pendiente').limit(20);
-    
+      .is('legacy_id', null).eq('estado', 'Pendiente');
+
     if (pendingOrders && pendingOrders.length > 0) {
       const pushResp = await fetch(`${API_OFICINA}/api/push-orders`, { 
         method: 'POST', 
@@ -133,23 +95,16 @@ export async function GET() {
         body: JSON.stringify({ orders: pendingOrders }) 
       });
       const pushJson = await pushResp.json();
-      
-      let procesados = 0;
       if (pushJson.results) {
         for (const res of pushJson.results) {
-          if (res.success) {
-            await supabase.from('pedidos').update({ legacy_id: res.legacy_id }).eq('id', res.id);
-            procesados++;
-          }
+          if (res.success) await supabase.from('pedidos').update({ legacy_id: res.legacy_id }).eq('id', res.id);
         }
       }
-      results.push({ tabla: 'pedidos', direccion: 'Supabase→SQL', procesados, errores: pendingOrders.length - procesados, mensaje: 'Pedidos procesados' });
+      results.push({ tabla: 'pedidos', procesados: pendingOrders.length, direccion: 'Supabase→SQL' });
     }
 
     return NextResponse.json({ success: true, resultados: results });
-
   } catch (error: any) {
-    console.error('Error FATAL en sync/full:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
