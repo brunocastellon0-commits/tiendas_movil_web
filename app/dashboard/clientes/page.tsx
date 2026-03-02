@@ -214,6 +214,18 @@ export default function ClientsPage() {
         location = `SRID=4326;POINT(${formData.longitude} ${formData.latitude})`
       }
 
+      // vendor_id debe referenciar employees.id, NO auth.users.id directamente.
+      // Buscamos el registro del empleado por email del usuario logueado.
+      let vendorId: string | null = null
+      if (user?.email) {
+        const { data: empData } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('email', user.email)
+          .maybeSingle()
+        vendorId = empData?.id ?? null
+      }
+
       const payload = {
         code: formData.code,
         name: formData.name,
@@ -224,7 +236,7 @@ export default function ClientsPage() {
         credit_limit: parseFloat(formData.credit_limit || '0'),
         location: location,
         status: formData.status,
-        vendor_id: user?.id
+        vendor_id: vendorId   // null si el usuario no tiene registro en employees
       }
 
       if (isEditing && editingId) {
