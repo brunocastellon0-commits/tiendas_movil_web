@@ -21,11 +21,12 @@ export async function GET() {
     if (pullData.zones?.length > 0) {
       const data = pullData.zones.map((z: any) => ({
         legacy_id: z.idz || z.idzon,
+        codigo_zona: String(z.idz || z.idzon || ''),
         name: z.zonnom || z.zonom || 'Ruta'
       }));
       const { error } = await supabase.from('zones').upsert(data, { onConflict: 'legacy_id' });
       if (error) console.error('zones error:', error.message);
-      results.push({ tabla: 'zones', procesados: data.length, error: error?.message });
+      results.push({ tabla: 'zones', procesados: data.length, error: error?.message || null });
     }
 
     // --- EMPLEADOS ---
@@ -38,7 +39,7 @@ export async function GET() {
       }));
       const { error } = await supabase.from('employees').upsert(data, { onConflict: 'legacy_id' });
       if (error) console.error('employees error:', error.message);
-      results.push({ tabla: 'employees', procesados: data.length, error: error?.message });
+      results.push({ tabla: 'employees', procesados: data.length, error: error?.message || null });
     }
 
     // --- CATEGORÍAS ---
@@ -49,7 +50,7 @@ export async function GET() {
       }));
       const { error } = await supabase.from('categorias').upsert(data, { onConflict: 'legacy_id' });
       if (error) console.error('categorias error:', error.message);
-      results.push({ tabla: 'categorias', procesados: data.length, error: error?.message });
+      results.push({ tabla: 'categorias', procesados: data.length, error: error?.message || null });
     }
 
     // --- PRODUCTOS ---
@@ -93,10 +94,23 @@ export async function GET() {
       results.push({ tabla: 'clients', procesados: data.length });
     }
 
-    // --- PUSH PEDIDOS ---
- const { data: pendingOrders } = await supabase.from('pedidos')
-  .select(`*, clients_id ( legacy_id ), detalle_pedido ( producto_id, cantidad, precio_unitario, productos:producto_id ( codigo_producto ) )`)
-  .is('legacy_id', null).eq('estado', 'Pendiente');
+    // --- PUSH PEDIDOS (Supabase → SQL Server) ---
+    const { data: pendingOrders, error: ordersError } = await supabase
+      .from('pedidos')
+      .select(`
+        *,
+        clients_id ( legacy_id ),
+        detalle_pedido (
+          producto_id,
+          cantidad,
+          precio_unitario,
+          productos:producto_id ( codigo_producto )
+        )
+      `)
+      .is('legacy_id', null)
+      .eq('estado', 'Pendiente');
+
+    if (ordersError) console.error('pedidos fetch error:', ordersError.message);
 
     if (pendingOrders && pendingOrders.length > 0) {
       const pushResp = await fetch(`${API_OFICINA}/api/push-orders`, { 
@@ -107,7 +121,9 @@ export async function GET() {
       const pushJson = await pushResp.json();
       if (pushJson.results) {
         for (const res of pushJson.results) {
-          if (res.success) await supabase.from('pedidos').update({ legacy_id: res.legacy_id }).eq('id', res.id);
+          if (res.success) {
+            await supabase.from('pedidos').update({ legacy_id: res.legacy_id }).eq('id', res.id);
+          }
         }
       }
       results.push({ tabla: 'pedidos', procesados: pendingOrders.length, direccion: 'Supabase→SQL' });
