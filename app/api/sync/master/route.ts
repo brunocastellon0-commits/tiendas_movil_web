@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getSqlConnection } from '@/utils/mssql';
 import sql from 'mssql';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Función auxiliar para limpiar textos y evitar nulos
  */

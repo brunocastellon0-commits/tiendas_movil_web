@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useFormPersistence } from '@/hooks/useFormPersistence'
@@ -41,7 +43,6 @@ type Zone = {
 
 export default function EmployeesManagement() {
   const router = useRouter()
-  const supabase = createClient()
   
   // Estados de carga de datos
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -77,6 +78,7 @@ export default function EmployeesManagement() {
   // Carga inicial de datos desde Supabase
   useEffect(() => {
     const fetchData = async () => {
+      const supabase = createClient()
       try {
         const [employeesResponse, zonesResponse] = await Promise.all([
           supabase.from('employees').select('*').order('created_at', { ascending: false }),
@@ -150,6 +152,7 @@ export default function EmployeesManagement() {
     }
 
     try {
+      const supabase = createClient()
       setFormLoading(true)
       let newEmployeeId = editingId;
 
@@ -301,6 +304,7 @@ export default function EmployeesManagement() {
   }
 
   const handleDeleteEmployee = async (employee: Employee) => {
+    const supabase = createClient()
     if (!confirm(`¿Estás seguro de desactivar al empleado "${employee.full_name}"?`)) {
       return
     }
