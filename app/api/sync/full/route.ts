@@ -39,7 +39,7 @@ if (pullData.employees?.length > 0) {
     legacy_id: e.idemp,
     full_name: (e.empnom || 'Sin Nombre').trim(),
     email: e.empemail?.includes('@') ? e.empemail.trim() : `vendedor_${e.idemp}@tiendasmovil.com`,
-    status: 'Activo'
+    status: 'Habilitado'
     // NO incluir id, Supabase lo genera con gen_random_uuid()
   }));
   const { error } = await supabase.from('employees').upsert(data, { 
