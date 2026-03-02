@@ -7,7 +7,7 @@ export async function GET() {
   const results: any[] = [];
   try {
     const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!, 
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
     const API_OFICINA = process.env.NEXT_PUBLIC_API_OFICINA || 'https://db-sql.tiendasmovil.com';
@@ -17,38 +17,30 @@ export async function GET() {
     if (!pullResponse.ok) throw new Error("La Mini-API de la oficina no respondió.");
     const pullData = await pullResponse.json();
 
-// --- ZONAS ---
-if (pullData.zones?.length > 0) {
-  const data = pullData.zones.map((z: any) => ({
-    legacy_id: z.idz || z.idzon,
-    codigo_zona: String(z.idz || z.idzon || ''),
-    name: z.zonnom || z.zonom || 'Ruta'
-    // NO incluir id, Supabase lo genera con gen_random_uuid()
-  }));
-  const { error } = await supabase.from('zones').upsert(data, { 
-    onConflict: 'legacy_id',
-    ignoreDuplicates: false 
-  });
-  if (error) console.error('zones error:', error.message);
-  results.push({ tabla: 'zones', procesados: data.length, error: error?.message || null });
-}
+    // --- ZONAS ---
+    if (pullData.zones?.length > 0) {
+      const data = pullData.zones.map((z: any) => ({
+        legacy_id: z.idz,
+        codigo_zona: String(z.zcod || z.idz || ''),
+        name: (z.znom || 'Ruta').trim()
+      }));
+      const { error } = await supabase.from('zones').upsert(data, { onConflict: 'legacy_id' });
+      if (error) console.error('zones error:', error.message);
+      results.push({ tabla: 'zones', procesados: data.length, error: error?.message || null });
+    }
 
-// --- EMPLEADOS ---
-if (pullData.employees?.length > 0) {
-  const data = pullData.employees.map((e: any) => ({
-    legacy_id: e.idemp,
-    full_name: (e.empnom || 'Sin Nombre').trim(),
-    email: e.empemail?.includes('@') ? e.empemail.trim() : `vendedor_${e.idemp}@tiendasmovil.com`,
-    status: 'Habilitado'
-    // NO incluir id, Supabase lo genera con gen_random_uuid()
-  }));
-  const { error } = await supabase.from('employees').upsert(data, { 
-    onConflict: 'legacy_id',
-    ignoreDuplicates: false
-  });
-  if (error) console.error('employees error:', error.message);
-  results.push({ tabla: 'employees', procesados: data.length, error: error?.message || null });
-}
+    // --- EMPLEADOS ---
+    if (pullData.employees?.length > 0) {
+      const data = pullData.employees.map((e: any) => ({
+        legacy_id: e.idemp,
+        full_name: (e.empnom || 'Sin Nombre').trim(),
+        email: e.empemail?.includes('@') ? e.empemail.trim() : `vendedor_${e.idemp}@tiendasmovil.com`,
+        status: 'Habilitado'
+      }));
+      const { error } = await supabase.from('employees').upsert(data, { onConflict: 'legacy_id' });
+      if (error) console.error('employees error:', error.message);
+      results.push({ tabla: 'employees', procesados: data.length, error: error?.message || null });
+    }
 
     // --- CATEGORÍAS ---
     if (pullData.categories?.length > 0) {
@@ -65,18 +57,21 @@ if (pullData.employees?.length > 0) {
     if (pullData.products?.length > 0) {
       const data = pullData.products.map((p: any) => ({
         legacy_id: p.idprd,
-        codigo_producto: p.prdcod?.trim(),
-        nombre_producto: p.prdnom?.trim(),
+        codigo_producto: (p.prdcod || '').trim(),
+        nombre_producto: (p.prdnom || '').trim(),
         precio_base_venta: p.prdpoficial || 0,
+        unidad_base_venta: (p.prdunid || 'UND').trim(),
         stock_actual: p.prdstmax || 0,
         activo: true
       }));
+
+      let productErrors: string[] = [];
       for (let i = 0; i < data.length; i += batchSize) {
         const { error } = await supabase.from('productos')
           .upsert(data.slice(i, i + batchSize), { onConflict: 'legacy_id' });
-        if (error) console.error(`productos batch ${i} error:`, error.message);
+        if (error) productErrors.push(`batch ${i}: ${error.message}`);
       }
-      results.push({ tabla: 'productos', procesados: data.length });
+      results.push({ tabla: 'productos', procesados: data.length, error: productErrors[0] || null });
     }
 
     // --- CLIENTES ---
@@ -86,20 +81,21 @@ if (pullData.employees?.length > 0) {
 
       const data = pullData.clients.map((c: any) => ({
         legacy_id: c.idcli,
-        code: c.clicod?.trim(),
-        name: c.clinom?.trim(),
-        address: c.clidir?.trim(),
+        code: (c.clicod || '').trim(),
+        name: (c.clinom || '').trim(),
+        address: (c.clidir || '').trim(),
         zone_id: sbZones?.find(z => z.legacy_id == c.idz)?.id || null,
         vendor_id: sbEmps?.find(e => e.legacy_id == c.cliidemp)?.id || null,
         status: 'Vigente'
       }));
 
+      let clientErrors: string[] = [];
       for (let i = 0; i < data.length; i += batchSize) {
         const { error } = await supabase.from('clients')
           .upsert(data.slice(i, i + batchSize), { onConflict: 'legacy_id' });
-        if (error) console.error(`clients batch ${i} error:`, error.message);
+        if (error) clientErrors.push(`batch ${i}: ${error.message}`);
       }
-      results.push({ tabla: 'clients', procesados: data.length });
+      results.push({ tabla: 'clients', procesados: data.length, error: clientErrors[0] || null });
     }
 
     // --- PUSH PEDIDOS (Supabase → SQL Server) ---
@@ -121,10 +117,10 @@ if (pullData.employees?.length > 0) {
     if (ordersError) console.error('pedidos fetch error:', ordersError.message);
 
     if (pendingOrders && pendingOrders.length > 0) {
-      const pushResp = await fetch(`${API_OFICINA}/api/push-orders`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ orders: pendingOrders }) 
+      const pushResp = await fetch(`${API_OFICINA}/api/push-orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orders: pendingOrders })
       });
       const pushJson = await pushResp.json();
       if (pushJson.results) {
