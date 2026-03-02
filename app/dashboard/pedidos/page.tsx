@@ -292,7 +292,18 @@ export default function OrdersPage() {
         .eq('email', user?.email)
         .single()
 
-      // 1. Guardar en Supabase (Cabecera)
+      // 1. Intentar capturar ubicación GPS del preventista en este momento
+      // Se guarda en 'ubicacion_venta' (campo geography que ya existe en la tabla pedidos)
+      let pedidoUbicacion: string | null = null
+      try {
+        const pos = await new Promise<GeolocationPosition>((res, rej) =>
+          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 })
+        )
+        // PostGIS acepta WKT como string: 'POINT(longitud latitud)'
+        pedidoUbicacion = `POINT(${pos.coords.longitude} ${pos.coords.latitude})`
+      } catch { /* GPS no disponible, se guarda sin ubicación */ }
+
+      // 2. Guardar en Supabase (Cabecera) con ubicación GPS
       const { data: orderData, error: orderError } = await supabase
         .from('pedidos')
         .insert({
@@ -302,7 +313,8 @@ export default function OrdersPage() {
           estado: formData.estado,
           total_venta: total,
           fecha_pedido: new Date().toISOString(),
-          empleado_id: employeeData?.id || null
+          empleado_id: employeeData?.id || null,
+          ubicacion_venta: pedidoUbicacion // 📍 Ubicación del preventista al crear el pedido
         })
         .select()
         .single()

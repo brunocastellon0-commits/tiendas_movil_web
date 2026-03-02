@@ -1,11 +1,11 @@
 'use client'
 
-import { memo, useEffect, useRef, useMemo } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { memo, useEffect, useRef, useMemo, useState } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 
-// Tipo de dato
+// ─── TIPOS ──────────────────────────────────────────────────────────────────
 type EmployeeLocation = {
   id: string
   full_name: string
@@ -17,380 +17,386 @@ type EmployeeLocation = {
   is_active?: boolean
 }
 
-// Componente para controlar el mapa desde fuera
-function MapController({ selectedEmployeeId, employees }: { selectedEmployeeId: string | null, employees: EmployeeLocation[] }) {
-  const map = useMap()
-  
-  useEffect(() => {
-    if (selectedEmployeeId) {
-      const employee = employees.find(e => e.id === selectedEmployeeId)
-      if (employee) {
-        map.flyTo([employee.latitude, employee.longitude], 16, {
-          duration: 1.5
-        })
-      }
+type RoutePoint = {
+  id: string
+  latitude: number
+  longitude: number
+  label: string
+  color: string
+  client_id: string | null
+  client_name?: string | null
+  vendor_id: string | null
+  vendor_name?: string | null
+  zona_id?: string | null
+}
+
+type PedidoMarker = {
+  id: string
+  latitude: number
+  longitude: number
+  cliente_nombre: string
+  total_venta: number
+  fecha: string
+  empleado_nombre: string
+  estado: string
+  numero_documento: string
+}
+
+// ─── HELPERS WKB ────────────────────────────────────────────────────────────
+function parseWKBHex(wkbHex: string): { latitude: number; longitude: number } | null {
+  try {
+    const coordsStart = 18
+    const xHex = wkbHex.slice(coordsStart, coordsStart + 16)
+    const yHex = wkbHex.slice(coordsStart + 16, coordsStart + 32)
+    const hexToDouble = (hex: string): number => {
+      const bytes = new Uint8Array(8)
+      for (let i = 0; i < 8; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
+      return new DataView(bytes.buffer).getFloat64(0, true)
     }
-  }, [selectedEmployeeId, employees, map])
-  
+    return { longitude: hexToDouble(xHex), latitude: hexToDouble(yHex) }
+  } catch { return null }
+}
+
+function parseLocation(loc: any): { latitude: number; longitude: number } | null {
+  if (!loc) return null
+  if (typeof loc === 'string' && loc.length > 20 && /^[0-9A-F]+$/i.test(loc))
+    return parseWKBHex(loc)
+  if (typeof loc === 'object' && loc.type === 'Point' && Array.isArray(loc.coordinates))
+    return { longitude: loc.coordinates[0], latitude: loc.coordinates[1] }
+  if (typeof loc === 'string' && loc.includes('POINT(')) {
+    const m = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/)
+    if (m) return { longitude: parseFloat(m[1]), latitude: parseFloat(m[2]) }
+  }
   return null
 }
 
-// --- FUNCIÓN PARA CREAR EL GLOBITO PERSONALIZADO ---
-const createCustomIcon = (fullName: string) => {
+// ─── CONTROLADOR DEL MAPA ───────────────────────────────────────────────────
+function MapController({ selectedEmployeeId, employees }: { selectedEmployeeId: string | null, employees: EmployeeLocation[] }) {
+  const map = useMap()
+  useEffect(() => {
+    if (selectedEmployeeId) {
+      const emp = employees.find(e => e.id === selectedEmployeeId)
+      if (emp) map.flyTo([emp.latitude, emp.longitude], 16, { duration: 1.5 })
+    }
+  }, [selectedEmployeeId, employees, map])
+  return null
+}
+
+// ─── MODO CREAR PUNTO (click en mapa) ───────────────────────────────────────
+function RoutePointCreator({ active, onPointCreated }: { active: boolean, onPointCreated: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      if (active) onPointCreated(e.latlng.lat, e.latlng.lng)
+    }
+  })
+  return null
+}
+
+// ─── ICONOS ─────────────────────────────────────────────────────────────────
+const createEmployeeIcon = (fullName: string, score: number, isActive: boolean) => {
   const initial = fullName.charAt(0).toUpperCase()
-  
+  const borderColor = score < 70 ? '#dc2626' : score < 90 ? '#d97706' : '#16a34a'
+  const bgFrom = score < 70 ? '#fee2e2' : score < 90 ? '#fef3c7' : '#dcfce7'
+  const textColor = score < 70 ? '#991b1b' : score < 90 ? '#92400e' : '#166534'
+  const pulse = isActive ? `<div style="position:absolute;bottom:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#22c55e;border:2px solid white;animation:pulse 2s infinite"></div>` : ''
   return L.divIcon({
-    className: 'custom-icon',
-    html: `
-      <div class="relative group transform transition-transform hover:scale-110">
-        <div class="w-10 h-10 bg-white rounded-full border-2 border-green-600 shadow-lg flex items-center justify-center bg-gradient-to-br from-green-100 to-emerald-100">
-          <span class="text-green-700 font-bold text-sm">${initial}</span>
-        </div>
-        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-green-600"></div>
+    className: '',
+    html: `<div style="position:relative">
+      <div style="width:40px;height:40px;background:linear-gradient(135deg,${bgFrom},white);border-radius:50%;border:2.5px solid ${borderColor};box-shadow:0 4px 12px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center">
+        <span style="color:${textColor};font-weight:900;font-size:15px;font-family:sans-serif">${initial}</span>
       </div>
-    `,
+      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${borderColor}"></div>
+      ${pulse}
+    </div>`,
     iconSize: [40, 48],
     iconAnchor: [20, 48],
+    popupAnchor: [0, -50]
+  })
+}
+
+const createVisitIcon = (outcome: string) => {
+  const colors: Record<string, [string, string]> = {
+    sale: ['#16a34a', '#bbf7d0'],
+    no_sale: ['#d97706', '#fef9c3'],
+    store_closed: ['#dc2626', '#fee2e2'],
+  }
+  const [border, bg] = colors[outcome] || ['#6b7280', '#f3f4f6']
+  const symbols: Record<string, string> = {
+    sale: '💰', no_sale: '✗', store_closed: '🔒'
+  }
+  const sym = symbols[outcome] || '?'
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative">
+      <div style="width:38px;height:38px;background:${bg};border-radius:50%;border:3px solid ${border};box-shadow:0 3px 10px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;font-size:15px">${sym}</div>
+      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${border}"></div>
+    </div>`,
+    iconSize: [38, 46],
+    iconAnchor: [19, 46],
     popupAnchor: [0, -48]
   })
 }
 
-function LeafletMap({ employees, selectedEmployeeId, visits = [], onVisitClick }: { 
-  employees: EmployeeLocation[], 
-  selectedEmployeeId?: string | null,
-  visits?: any[],
+const createPedidoIcon = (estado: string, empleadoInicial: string) => {
+  const isCompleted = estado === 'Completado' || estado === 'Entregado'
+  const bg = isCompleted ? '#1d4ed8' : '#6d28d9'
+  const light = isCompleted ? '#dbeafe' : '#ede9fe'
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative">
+      <div style="width:38px;height:38px;background:${light};border-radius:50%;border:3px solid ${bg};box-shadow:0 3px 10px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center">
+        <span style="color:${bg};font-weight:900;font-size:13px;font-family:sans-serif">${empleadoInicial}</span>
+      </div>
+      <div style="position:absolute;-top:-4px;left:50%;transform:translateX(-50%) translateY(-50%);font-size:10px">🛒</div>
+      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${bg}"></div>
+    </div>`,
+    iconSize: [38, 46],
+    iconAnchor: [19, 46],
+    popupAnchor: [0, -48]
+  })
+}
+
+const createRoutePointIcon = (color: string, hasClient: boolean, label: string) => {
+  const borderColor = hasClient ? '#16a34a' : '#6366f1'
+  const bg = hasClient ? '#f0fdf4' : '#eef2ff'
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative">
+      <div style="width:36px;height:36px;background:${bg};border-radius:8px;border:3px solid ${borderColor};box-shadow:0 3px 10px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;transform:rotate(45deg)">
+        <span style="transform:rotate(-45deg);font-size:12px">${hasClient ? '🏪' : '📍'}</span>
+      </div>
+      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${borderColor}"></div>
+      ${label ? `<div style="position:absolute;top:-22px;left:50%;transform:translateX(-50%);background:${borderColor};color:white;font-size:9px;font-weight:bold;padding:2px 5px;border-radius:4px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis">${label}</div>` : ''}
+    </div>`,
+    iconSize: [36, 44],
+    iconAnchor: [18, 44],
+    popupAnchor: [0, -46]
+  })
+}
+
+// ─── COMPONENTE PRINCIPAL ────────────────────────────────────────────────────
+function LeafletMap({
+  employees,
+  selectedEmployeeId,
+  visits = [],
+  pedidos = [],
+  routePoints = [],
+  onVisitClick,
+  onRoutePointClick,
+  creatingRoutePoint = false,
+  onNewRoutePoint,
+  clients = [],
+  onAssignClient,
+}: {
+  employees: EmployeeLocation[]
+  selectedEmployeeId?: string | null
+  visits?: any[]
+  pedidos?: PedidoMarker[]
+  routePoints?: RoutePoint[]
   onVisitClick?: (visit: any) => void
+  onRoutePointClick?: (point: RoutePoint) => void
+  creatingRoutePoint?: boolean
+  onNewRoutePoint?: (lat: number, lng: number) => void
+  clients?: { id: string; name: string; code: string }[]
+  onAssignClient?: (pointId: string, clientId: string) => void
 }) {
-  // Coordenadas por defecto (Cochabamba, Bolivia)
-  const centerPosition: [number, number] = employees.length > 0 
+  const centerPosition: [number, number] = employees.length > 0
     ? [employees[0].latitude, employees[0].longitude]
     : [-17.3935, -66.1570]
 
-  // Refs para los marcadores
   const markerRefs = useRef<{ [key: string]: L.Marker }>({})
 
-  // Abrir popup cuando se selecciona un empleado
   useEffect(() => {
     if (selectedEmployeeId && markerRefs.current[selectedEmployeeId]) {
       markerRefs.current[selectedEmployeeId].openPopup()
     }
   }, [selectedEmployeeId])
 
-  // Procesar visitas para extraer coordenadas
-  const processedVisits = useMemo(() => {
-    return visits.map(visit => {
-      let latitude = null
-      let longitude = null
-      
-      if (visit.check_out_location) {
-        const location = visit.check_out_location
-        
-        // WKB Hexadecimal
-        if (typeof location === 'string' && location.length > 20 && /^[0-9A-F]+$/i.test(location)) {
-          const coords = parseWKBHex(location)
-          if (coords) {
-            latitude = coords.latitude
-            longitude = coords.longitude
-          }
-        }
-        // GeoJSON Object
-        else if (typeof location === 'object' && location.type === 'Point' && Array.isArray(location.coordinates)) {
-          longitude = location.coordinates[0]
-          latitude = location.coordinates[1]
-        }
-        // WKT String
-        else if (typeof location === 'string' && location.includes('POINT(')) {
-          const match = location.match(/POINT\(([^ ]+) ([^ ]+)\)/)
-          if (match) {
-            longitude = parseFloat(match[1])
-            latitude = parseFloat(match[2])
-          }
-        }
-      }
-      
-      return {
-        ...visit,
-        latitude,
-        longitude
-      }
-    }).filter(v => v.latitude && v.longitude && !isNaN(v.latitude) && !isNaN(v.longitude))
-  }, [visits])
+  // Procesar visitas
+  const processedVisits = useMemo(() =>
+    visits.map(v => ({ ...v, ...parseLocation(v.check_out_location) }))
+      .filter(v => v.latitude && v.longitude && !isNaN(v.latitude) && !isNaN(v.longitude)),
+    [visits]
+  )
 
-  // Función para crear iconos de visitas según outcome
-  const createVisitIcon = (outcome: string) => {
-    let bgColor = ''
-    let borderColor = ''
-    let iconSvg = ''
-    
-    switch (outcome) {
-      case 'sale':
-        bgColor = 'bg-green-500'
-        borderColor = 'border-green-600'
-        iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>`
-        break
-      case 'no_sale':
-        bgColor = 'bg-yellow-500'
-        borderColor = 'border-yellow-600'
-        iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`
-        break
-      case 'store_closed':
-        bgColor = 'bg-red-500'
-        borderColor = 'border-red-600'
-        iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`
-        break
-      default:
-        bgColor = 'bg-gray-500'
-        borderColor = 'border-gray-600'
-        iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>`
-    }
-    
-    return L.divIcon({
-      className: 'custom-visit-icon',
-      html: `
-        <div class="relative group transform transition-transform hover:scale-110">
-          <div class="w-12 h-12 ${bgColor} rounded-full border-3 ${borderColor} shadow-lg flex items-center justify-center">
-            ${iconSvg}
-          </div>
-          <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] ${borderColor.replace('border-', 'border-t-')}"></div>
-        </div>
-      `,
-      iconSize: [48, 56],
-      iconAnchor: [24, 56],
-      popupAnchor: [0, -56]
-    })
-  }
-
-  const getOutcomeLabel = (outcome: string) => {
-    switch (outcome) {
-      case 'sale': return 'Venta Exitosa'
-      case 'no_sale': return 'Sin Venta'
-      case 'store_closed': return 'Tienda Cerrada'
-      default: return outcome
-    }
-  }
-
-  const getOutcomeColor = (outcome: string) => {
-    switch (outcome) {
-      case 'sale': return 'text-green-700 bg-green-100'
-      case 'no_sale': return 'text-yellow-700 bg-yellow-100'
-      case 'store_closed': return 'text-red-700 bg-red-100'
-      default: return 'text-gray-700 bg-gray-100'
-    }
-  }
-
-  // Función auxiliar para parsear WKB
-  function parseWKBHex(wkbHex: string): { latitude: number; longitude: number } | null {
-    try {
-      const coordsStart = 18
-      const xHex = wkbHex.slice(coordsStart, coordsStart + 16)
-      const yHex = wkbHex.slice(coordsStart + 16, coordsStart + 32)
-      
-      const hexToDouble = (hex: string): number => {
-        const bytes = new Uint8Array(8)
-        for (let i = 0; i < 8; i++) {
-          bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
-        }
-        const view = new DataView(bytes.buffer)
-        return view.getFloat64(0, true)
-      }
-      
-      const longitude = hexToDouble(xHex)
-      const latitude = hexToDouble(yHex)
-      
-      return { latitude, longitude }
-    } catch (error) {
-      return null
-    }
-  }
+  const getOutcomeLabel = (o: string) =>
+    ({ sale: '💰 Venta Exitosa', no_sale: '✗ Sin Venta', store_closed: '🔒 Tienda Cerrada' })[o] || o
 
   return (
-    <div className="w-full h-[600px] rounded-2xl overflow-hidden shadow-lg border border-gray-200 z-0">
-      <MapContainer 
-        center={centerPosition} 
-        zoom={13} 
-        scrollWheelZoom={true} 
-        style={{ height: "100%", width: "100%" }}
-      >
-        {/* Controlador del mapa */}
-        <MapController selectedEmployeeId={selectedEmployeeId || null} employees={employees} />
-        
-        {/* CAPA DE MAPA (OpenStreetMap) */}
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+    <div style={{ position: 'relative' }}>
+      {/* Cursor crosshair si está en modo creación */}
+      {creatingRoutePoint && (
+        <div style={{
+          position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1000, background: '#4f46e5', color: 'white', padding: '8px 18px',
+          borderRadius: 20, fontSize: 13, fontWeight: 700, boxShadow: '0 4px 12px rgba(79,70,229,0.4)',
+          pointerEvents: 'none'
+        }}>
+          📍 Haz clic en el mapa para colocar un punto de ruta
+        </div>
+      )}
 
-        {/* MARCADORES DE EMPLEADOS */}
-        {employees.map((emp) => {
-          // Color basado en GPS Score
-          const score = emp.gps_trust_score ?? 100
-          let statusColor = 'green'
-          if (score < 70) statusColor = 'red'
-          else if (score < 90) statusColor = 'yellow'
+      <div className={`w-full h-[620px] rounded-2xl overflow-hidden shadow-lg border border-gray-200 z-0 ${creatingRoutePoint ? 'cursor-crosshair' : ''}`}>
+        <MapContainer center={centerPosition} zoom={13} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
+          <MapController selectedEmployeeId={selectedEmployeeId || null} employees={employees} />
+          <RoutePointCreator active={creatingRoutePoint} onPointCreated={(lat, lng) => onNewRoutePoint?.(lat, lng)} />
 
-          const borderColorClass = score < 70 
-            ? 'border-red-600' 
-            : score < 90 
-              ? 'border-yellow-500' 
-              : 'border-green-600'
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
 
-          const bgColorClass = score < 70
-             ? 'from-red-100 to-orange-100'
-             : score < 90
-               ? 'from-yellow-100 to-amber-100'
-               : 'from-green-100 to-emerald-100'
-
-          const iconHtml = `
-            <div class="relative group transform transition-transform hover:scale-110">
-              <div class="w-10 h-10 bg-white rounded-full border-2 ${borderColorClass} shadow-lg flex items-center justify-center bg-gradient-to-br ${bgColorClass}">
-                <span class="${score < 70 ? 'text-red-700' : score < 90 ? 'text-yellow-700' : 'text-green-700'} font-bold text-sm">${emp.full_name.charAt(0).toUpperCase()}</span>
-              </div>
-              <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-${statusColor === 'green' ? 'green-600' : statusColor === 'red' ? 'red-600' : 'yellow-500'}"></div>
-            </div>
-          `
-
-          const icon = L.divIcon({
-            className: 'custom-icon',
-            html: iconHtml,
-            iconSize: [40, 48],
-            iconAnchor: [20, 48],
-            popupAnchor: [0, -48]
-          })
-
-          return (
-            <Marker 
-              key={emp.id} 
+          {/* ── MARCADORES DE EMPLEADOS ── */}
+          {employees.map(emp => (
+            <Marker
+              key={emp.id}
               position={[emp.latitude, emp.longitude]}
-              icon={icon}
-              ref={(ref) => {
-                if (ref) {
-                  markerRefs.current[emp.id] = ref
-                }
-              }}
+              icon={createEmployeeIcon(emp.full_name, emp.gps_trust_score ?? 100, emp.is_active ?? false)}
+              ref={ref => { if (ref) markerRefs.current[emp.id] = ref }}
             >
-              <Popup className="custom-popup">
-                <div className="min-w-[200px] p-2">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-base">{emp.full_name}</h3>
-                      <span className="inline-block px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] rounded-full font-medium">
-                        {emp.job_title || 'Empleado'}
-                      </span>
-                    </div>
-                    <div className={`px-2 py-1 rounded-lg flex flex-col items-center ${score < 70 ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-                       <span className="text-[10px] font-bold uppercase">GPS Score</span>
-                       <span className="font-black text-sm">{score}%</span>
-                    </div>
-                  </div>
-                  
-                  <div className="text-xs text-gray-500 border-t pt-2 mt-2 space-y-1">
-                    <div className="flex justify-between">
-                      <span className="font-medium">Estado:</span>
-                      <span className={`font-bold ${emp.is_active ? 'text-green-600' : 'text-gray-400'}`}>
-                        {emp.is_active ? '● En línea' : '○ Desconectado'}
-                      </span>
-                    </div>
-                    <p className="font-mono text-[10px]">
-                      {emp.latitude.toFixed(6)}, {emp.longitude.toFixed(6)}
-                    </p>
-                    <p className="mt-1 flex items-center gap-1">
-                      <span>🕒</span> {emp.last_update}
-                    </p>
+              <Popup>
+                <div style={{ minWidth: 200, padding: 6 }}>
+                  <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 4 }}>{emp.full_name}</div>
+                  <span style={{ fontSize: 11, background: '#f3f4f6', padding: '2px 8px', borderRadius: 20 }}>{emp.job_title}</span>
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#6b7280' }}>
+                    <div>Estado: <b style={{ color: emp.is_active ? '#16a34a' : '#9ca3af' }}>{emp.is_active ? '● En línea' : '○ Desconectado'}</b></div>
+                    <div>GPS Score: <b>{emp.gps_trust_score ?? 100}%</b></div>
+                    <div style={{ fontFamily: 'monospace', fontSize: 10 }}>{emp.latitude.toFixed(6)}, {emp.longitude.toFixed(6)}</div>
+                    <div>🕒 {emp.last_update}</div>
                   </div>
                 </div>
               </Popup>
             </Marker>
-          )
-        })}
+          ))}
 
-        {/* Marcadores de Visitas */}
-        {processedVisits.map((visit: any) => (
-          <Marker 
-            key={visit.id} 
-            position={[visit.latitude, visit.longitude]}
-            icon={createVisitIcon(visit.outcome)}
-          >
-            <Popup className="custom-popup">
-              <div className="min-w-[220px] p-2">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h3 className="font-bold text-gray-900 text-base">
-                      {visit.clients?.name || 'Cliente'}
-                    </h3>
-                    {visit.clients?.legacy_id && (
-                      <p className="text-xs text-gray-500">Cod: {visit.clients.legacy_id}</p>
-                    )}
-                  </div>
-                  <span className={`px-2 py-1 rounded-lg text-xs font-bold ${getOutcomeColor(visit.outcome)}`}>
-                    {getOutcomeLabel(visit.outcome)}
-                  </span>
-                </div>
-                
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-600">Vendedor:</span>
-                    <span className="text-gray-900">{visit.employees?.full_name || 'N/A'}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-600">Fecha:</span>
-                    <span className="text-gray-900">
-                      {new Date(visit.start_time).toLocaleDateString('es-BO', { 
-                        day: '2-digit', 
-                        month: 'short', 
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
+          {/* ── MARCADORES DE VISITAS ── */}
+          {processedVisits.map((visit: any) => (
+            <Marker
+              key={`visit-${visit.id}`}
+              position={[visit.latitude, visit.longitude]}
+              icon={createVisitIcon(visit.outcome)}
+            >
+              <Popup>
+                <div style={{ minWidth: 220, padding: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                    <div>
+                      <b style={{ fontSize: 14 }}>{visit.clients?.name || 'Visita'}</b>
+                      {visit.clients?.legacy_id && <div style={{ fontSize: 10, color: '#9ca3af' }}>Cód: {visit.clients.legacy_id}</div>}
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: visit.outcome === 'sale' ? '#dcfce7' : visit.outcome === 'no_sale' ? '#fef9c3' : '#fee2e2', color: visit.outcome === 'sale' ? '#166534' : visit.outcome === 'no_sale' ? '#713f12' : '#991b1b' }}>
+                      {getOutcomeLabel(visit.outcome)}
                     </span>
                   </div>
-                  
-                  {visit.notes && (
-                    <div className="pt-2 border-t border-gray-200">
-                      <p className="font-medium text-gray-600 mb-1">Notas:</p>
-                      <p className="text-gray-900 text-xs">{visit.notes}</p>
-                    </div>
-                  )}
-                  
-                  <div className="pt-2 border-t border-gray-200">
-                    <p className="font-mono text-[10px] text-gray-500">
-                      {visit.latitude.toFixed(6)}, {visit.longitude.toFixed(6)}
-                    </p>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>
+                    <div>Vendedor: <b>{visit.employees?.full_name || 'N/A'}</b></div>
+                    <div>Fecha: {new Date(visit.start_time).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</div>
+                    {visit.notes && <div style={{ marginTop: 4, fontStyle: 'italic' }}>"{visit.notes}"</div>}
                   </div>
-                  
                   {onVisitClick && (
-                    <div className="pt-3 border-t border-gray-200 mt-2">
-                      <button
-                        onClick={() => onVisitClick(visit)}
-                        className="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition-all shadow-md"
+                    <button onClick={() => onVisitClick(visit)} style={{ marginTop: 8, width: '100%', padding: '6px 0', background: '#16a34a', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                      Ver Detalles
+                    </button>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+
+          {/* ── MARCADORES DE PEDIDOS ── */}
+          {pedidos.map(p => (
+            <Marker
+              key={`pedido-${p.id}`}
+              position={[p.latitude, p.longitude]}
+              icon={createPedidoIcon(p.estado, p.empleado_nombre.charAt(0))}
+            >
+              <Popup>
+                <div style={{ minWidth: 220, padding: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                    <span style={{ fontSize: 18 }}>🛒</span>
+                    <div>
+                      <b style={{ fontSize: 14 }}>Pedido #{p.numero_documento}</b>
+                      <div style={{ fontSize: 10, color: '#6b7280' }}>{p.fecha}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#374151' }}>
+                    <div>Cliente: <b>{p.cliente_nombre}</b></div>
+                    <div>Vendedor: <b>{p.empleado_nombre}</b></div>
+                    <div>Total: <b style={{ color: '#1d4ed8' }}>Bs. {p.total_venta.toFixed(2)}</b></div>
+                    <div>Estado: <span style={{ fontWeight: 700 }}>{p.estado}</span></div>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+
+          {/* ── PUNTOS DE RUTA ── */}
+          {routePoints.map(rp => (
+            <Marker
+              key={`rp-${rp.id}`}
+              position={[rp.latitude, rp.longitude]}
+              icon={createRoutePointIcon(rp.color, !!rp.client_id, rp.label)}
+            >
+              <Popup>
+                <div style={{ minWidth: 230, padding: 6 }}>
+                  <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 4 }}>
+                    {rp.client_id ? `🏪 ${rp.client_name || 'Cliente asignado'}` : `📍 Punto de Ruta`}
+                  </div>
+                  {rp.label && <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>{rp.label}</div>}
+                  {rp.vendor_name && <div style={{ fontSize: 11 }}>Preventista: <b>{rp.vendor_name}</b></div>}
+
+                  {!rp.client_id && onAssignClient && clients.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5', marginBottom: 4 }}>Asignar Cliente:</p>
+                      <select
+                        id={`assign-client-${rp.id}`}
+                        style={{ width: '100%', padding: '5px 8px', fontSize: 11, border: '2px solid #c7d2fe', borderRadius: 8, marginBottom: 6 }}
                       >
-                        Ver Detalles Completos
+                        <option value="">-- Seleccionar --</option>
+                        {clients.map(c => (
+                          <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          const sel = document.getElementById(`assign-client-${rp.id}`) as HTMLSelectElement
+                          if (sel?.value) onAssignClient(rp.id, sel.value)
+                        }}
+                        style={{ width: '100%', padding: '6px 0', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                      >
+                        Asignar Cliente
                       </button>
                     </div>
                   )}
+
+                  {rp.client_id && (
+                    <div style={{ marginTop: 6, padding: '4px 8px', background: '#f0fdf4', borderRadius: 8, fontSize: 11, color: '#166534', fontWeight: 700 }}>
+                      ✓ Cliente: {rp.client_name}
+                    </div>
+                  )}
+
+                  {onRoutePointClick && (
+                    <button onClick={() => onRoutePointClick(rp)} style={{ marginTop: 8, width: '100%', padding: '6px 0', background: '#6b7280', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                      Gestionar Punto
+                    </button>
+                  )}
                 </div>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-      </MapContainer>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      </div>
     </div>
   )
 }
 
-// Memoize the component to prevent unnecessary re-renders
-export default memo(LeafletMap, (prevProps, nextProps) => {
-  // Re-render if selectedEmployeeId changed
-  if (prevProps.selectedEmployeeId !== nextProps.selectedEmployeeId) return false
-  
-  // Only re-render if the number of employees changed or employee IDs changed
-  if (prevProps.employees.length !== nextProps.employees.length) return false
-  
-  // Check if employee IDs are the same
-  const prevIds = prevProps.employees.map(e => e.id).join(',')
-  const nextIds = nextProps.employees.map(e => e.id).join(',')
-  
-  return prevIds === nextIds
+export default memo(LeafletMap, (prev, next) => {
+  if (prev.selectedEmployeeId !== next.selectedEmployeeId) return false
+  if (prev.creatingRoutePoint !== next.creatingRoutePoint) return false
+  if (prev.employees.length !== next.employees.length) return false
+  if ((prev.visits?.length ?? 0) !== (next.visits?.length ?? 0)) return false
+  if ((prev.pedidos?.length ?? 0) !== (next.pedidos?.length ?? 0)) return false
+  if ((prev.routePoints?.length ?? 0) !== (next.routePoints?.length ?? 0)) return false
+  return true
 })
 
 LeafletMap.displayName = 'LeafletMap'
