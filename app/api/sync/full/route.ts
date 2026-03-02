@@ -94,9 +94,9 @@ export async function GET() {
     }
 
     // --- PUSH PEDIDOS ---
-    const { data: pendingOrders } = await supabase.from('pedidos')
-      .select(`*, clients:clients_id ( legacy_id ), detalle_pedido ( producto_id, cantidad, precio_unitario, productos:producto_id ( codigo_producto ) )`)
-      .is('legacy_id', null).eq('estado', 'Pendiente');
+ const { data: pendingOrders } = await supabase.from('pedidos')
+  .select(`*, clients_id ( legacy_id ), detalle_pedido ( producto_id, cantidad, precio_unitario, productos:producto_id ( codigo_producto ) )`)
+  .is('legacy_id', null).eq('estado', 'Pendiente');
 
     if (pendingOrders && pendingOrders.length > 0) {
       const pushResp = await fetch(`${API_OFICINA}/api/push-orders`, { 
