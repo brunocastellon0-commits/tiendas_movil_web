@@ -23,6 +23,7 @@ const menuItems = [
   { name: 'Pareto', href: '/dashboard/reportes', icon: Settings },
   { name: 'Clientes', href: '/dashboard/clientes', icon: UserSquare2 },
   { name: 'Mapa', href: '/dashboard/mapa', icon: MapPin },
+  { name: 'Editor de Zonas', href: '/dashboard/zonas', icon: CircleDot },
   { name: 'Sincronización', href: '/dashboard/sincronizacion', icon: RefreshCw },
 ]
 

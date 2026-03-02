@@ -80,6 +80,8 @@ export default function EmployeesMapPage() {
 
   // Filtros
   const [selectedVisitEmployee, setSelectedVisitEmployee] = useState<string>('ALL')
+  const [selectedZonaFilter, setSelectedZonaFilter] = useState<string>('ALL')
+  const [zonas, setZonas] = useState<{ id: string; codigo_zona: string; descripcion: string }[]>([])
   const [dateRange, setDateRange] = useState({
     start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
@@ -113,6 +115,12 @@ export default function EmployeesMapPage() {
     init()
   }, [])
 
+  // ── Cargar zonas
+  useEffect(() => {
+    supabase.from('zonas').select('id, codigo_zona, descripcion').order('codigo_zona')
+      .then(({ data }) => { if (data) setZonas(data) })
+  }, [])
+
   // ── Cargar empleados (para filtros)
   useEffect(() => {
     supabase.from('employees').select('id, full_name').order('full_name')
@@ -139,6 +147,9 @@ export default function EmployeesMapPage() {
 
     if (selectedVisitEmployee !== 'ALL') {
       query.eq('vendor_id', selectedVisitEmployee)
+    }
+    if (selectedZonaFilter !== 'ALL') {
+      query.eq('zona_id', selectedZonaFilter)
     }
 
     const { data } = await query
@@ -250,7 +261,7 @@ export default function EmployeesMapPage() {
     fetchLocations()
     const interval = setInterval(fetchLocations, 30000)
     return () => clearInterval(interval)
-  }, [selectedVisitEmployee, dateRange])
+  }, [selectedVisitEmployee, selectedZonaFilter, dateRange])
 
   // ── Compartir ubicación
   const handleShareLocation = async () => {
@@ -374,13 +385,31 @@ export default function EmployeesMapPage() {
             <Filter className="w-5 h-5 text-green-600" />
             Filtros y Capas del Mapa
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Preventista</label>
               <select value={selectedVisitEmployee} onChange={e => setSelectedVisitEmployee(e.target.value)}
                 className="w-full px-4 py-3 text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500">
                 <option value="ALL">Todos los Vendedores</option>
                 {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">🗺️ Ruta / Zona</label>
+              <select
+                value={selectedZonaFilter}
+                onChange={e => setSelectedZonaFilter(e.target.value)}
+                className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 transition-all ${
+                  selectedZonaFilter !== 'ALL'
+                    ? 'border-purple-400 text-purple-900 bg-purple-50 focus:ring-purple-500'
+                    : 'border-gray-200 text-gray-900 focus:ring-green-500'
+                }`}>
+                <option value="ALL">Todas las Rutas</option>
+                {zonas.map(z => (
+                  <option key={z.id} value={z.id}>
+                    {z.codigo_zona} — {z.descripcion}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -409,7 +438,9 @@ export default function EmployeesMapPage() {
                 {layer.label}
               </button>
             ))}
-            <button onClick={() => setSelectedVisitEmployee('ALL')} className="ml-auto text-sm text-green-600 hover:underline font-semibold">
+            <button
+              onClick={() => { setSelectedVisitEmployee('ALL'); setSelectedZonaFilter('ALL') }}
+              className="ml-auto text-sm text-green-600 hover:underline font-semibold">
               Limpiar Filtros
             </button>
           </div>
