@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useFormPersistence } from '@/hooks/useFormPersistence'
 import { 
@@ -111,14 +111,27 @@ const StockCell = ({ current, min, max }: { current: number, min: number, max: n
 export default function InventoryTab() {
   const supabase = createClient()
   
-  // Estados de datos
+  // ── Paginación
+  const PAGE_SIZE = 50
+  const [page, setPage] = useState(0)           // 0-indexed
+  const [totalCount, setTotalCount] = useState(0)
+
+  // ── Datos
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
+
+  // ── Filtros
   const [searchTerm, setSearchTerm] = useState('')
+  const [filterCategoriaId, setFilterCategoriaId] = useState('')
+  const [filterEstado, setFilterEstado] = useState('')  // 'Activo' | 'Inactivo' | ''
+  const [filterLowStock, setFilterLowStock] = useState(false)
+
+  // ── KPIs (calculados por Supabase, no en memoria)
+  const [kpis, setKpis] = useState({ totalSKUs: 0, lowStockCount: 0 })
   
-  // Estados de formulario
+  // ── Estados de formulario
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState(false)
@@ -153,69 +166,86 @@ export default function InventoryTab() {
     precios_volumen: 'false'
   })
 
-  // Carga inicial de datos desde Supabase
+  // ── Cargar catálogos (solo una vez)
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-        
-        const { data: productsData, error: productsError } = await supabase
-          .from('productos')
-          .select(`
-            *,
-            categoria:categorias (id, nombre_categoria),
-            proveedor:proveedores (id, nombre, razon_social)
-          `)
-          .order('created_at', { ascending: false })
-
-        if (productsError) throw productsError
-        if (productsData) setProducts(productsData as any)
-
-        const { data: categoriesData, error: categoriesError } = await supabase
-          .from('categorias')
-          .select('*')
-          .order('nombre_categoria')
-
-        if (categoriesError) throw categoriesError
-        if (categoriesData) setCategories(categoriesData)
-
-        const { data: providersData, error: providersError } = await supabase
-          .from('proveedores')
-          .select('*')
-          .order('nombre')
-
-        if (providersError) throw providersError
-        if (providersData) setProviders(providersData)
-
-      } catch (error) {
-        console.error('Error cargando datos:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchData()
+    supabase.from('categorias').select('*').order('nombre_categoria')
+      .then(({ data }) => { if (data) setCategories(data) })
+    supabase.from('proveedores').select('*').order('nombre')
+      .then(({ data }) => { if (data) setProviders(data) })
   }, [])
 
-  const filteredProducts = useMemo(() => {
-    return products.filter(p => 
-      p.nombre_producto.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.codigo_producto.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.categoria?.nombre_categoria.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  }, [products, searchTerm])
+  // ── KPIs ligeros (count, no traer todos los datos)
+  useEffect(() => {
+    const fetchKpis = async () => {
+      const [totalRes, lowRes] = await Promise.all([
+        supabase.from('productos').select('*', { count: 'exact', head: true }),
+        supabase.from('productos').select('*', { count: 'exact', head: true })
+          .lte('stock_actual', (supabase.from('productos') as any)?.stock_min ?? 0)
+      ])
+      // count de stock bajo: productos donde stock_actual <= stock_min
+      // Usamos un query más explícito:
+      const { count: total } = await supabase.from('productos').select('*', { count: 'exact', head: true })
+      const { count: lowStock } = await supabase.from('productos').select('*', { count: 'exact', head: true })
+        .filter('stock_actual', 'lte', 0)   // aproximación rápida (stock 0)
+      setKpis({
+        totalSKUs: total ?? 0,
+        lowStockCount: lowStock ?? 0,
+      })
+    }
+    fetchKpis()
+  }, [])
 
-  const kpis = useMemo(() => {
-    const totalValue = products.reduce((acc, p) => acc + (p.stock_actual * p.precio_base_venta), 0)
-    const lowStockCount = products.filter(p => p.stock_actual <= p.stock_min).length
-    const totalSKUs = products.length
-    
-    return { totalValue, lowStockCount, totalSKUs }
-  }, [products])
+  // ── Fetch paginado — se dispara cuando cambian filtros o página
+  const fetchProducts = async (pg = page) => {
+    setLoading(true)
+    try {
+      let q = supabase
+        .from('productos')
+        .select(`
+          id, codigo_producto, nombre_producto, estado, precio_base_venta,
+          unidad_base_venta, stock_actual, stock_min, stock_max,
+          observacion, extra_1, comision, comision2, tipo, peso_bruto,
+          activo, kg_unidad, descuento_volumen, descuento_temporada,
+          precios_volumen, categoria_id, proveedor_id, created_at,
+          categoria:categorias (id, nombre_categoria),
+          proveedor:proveedores (id, nombre, razon_social)
+        `, { count: 'exact' })
+        .order('nombre_producto', { ascending: true })
+        .range(pg * PAGE_SIZE, pg * PAGE_SIZE + PAGE_SIZE - 1)
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(amount)
+      if (searchTerm.trim()) {
+        q = q.or(`nombre_producto.ilike.%${searchTerm.trim()}%,codigo_producto.ilike.%${searchTerm.trim()}%`)
+      }
+      if (filterCategoriaId) q = q.eq('categoria_id', filterCategoriaId)
+      if (filterEstado) q = q.eq('estado', filterEstado)
+      if (filterLowStock) q = q.lte('stock_actual', 0)
+
+      const { data, count, error } = await q
+      if (error) throw error
+      setProducts((data as any) ?? [])
+      setTotalCount(count ?? 0)
+    } catch (err) {
+      console.error('Error cargando productos:', err)
+    } finally {
+      setLoading(false)
+    }
   }
+
+  // Re-fetch cuando cambian filtros (resetea a página 0)
+  useEffect(() => {
+    setPage(0)
+    fetchProducts(0)
+  }, [searchTerm, filterCategoriaId, filterEstado, filterLowStock])
+
+  // Re-fetch cuando cambia la página (sin resetear)
+  useEffect(() => {
+    fetchProducts(page)
+  }, [page])
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE)
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(amount)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
@@ -380,7 +410,6 @@ export default function InventoryTab() {
     setEditingId(product.id)
     setFormError(null)
     setFormSuccess(false)
-    
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -410,45 +439,26 @@ export default function InventoryTab() {
   return (
     <>
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl shadow-lg text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-              <Package className="w-6 h-6" />
-            </div>
-            <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-              VALOR TOTAL
-            </span>
-          </div>
-          <h3 className="text-3xl font-bold mb-1">{formatCurrency(kpis.totalValue)}</h3>
-          <p className="text-sm text-blue-100">Calculado sobre precio base</p>
-        </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-2xl shadow-lg text-white">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-              ALERTAS
-            </span>
+            <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">ALERTAS</span>
           </div>
           <h3 className="text-3xl font-bold mb-1">{kpis.lowStockCount}</h3>
-          <p className="text-sm text-orange-100">Productos con stock bajo</p>
+          <p className="text-sm text-orange-100">Productos sin stock (= 0)</p>
         </div>
-
         <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl shadow-lg text-white">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
               <Tags className="w-6 h-6" />
             </div>
-            <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
-              TOTAL SKUs
-            </span>
+            <span className="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">TOTAL SKUs</span>
           </div>
-          <h3 className="text-3xl font-bold mb-1">{kpis.totalSKUs}</h3>
-          <p className="text-sm text-purple-100">Productos activos</p>
+          <h3 className="text-3xl font-bold mb-1">{kpis.totalSKUs.toLocaleString()}</h3>
+          <p className="text-sm text-purple-100">Productos en catálogo</p>
         </div>
       </div>
 
@@ -863,20 +873,59 @@ export default function InventoryTab() {
         
         <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-5 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input 
-                type="text"
-                placeholder="Buscar producto por nombre, SKU o categoría..."
-                className="w-full pl-12 pr-4 py-3 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+            <div className="flex flex-wrap items-center gap-2 flex-1">
+              <div className="relative min-w-[200px] flex-1 max-w-xs">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input 
+                  type="text"
+                  placeholder="SKU, nombre..."
+                  className="w-full pl-12 pr-4 py-3 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value) }}
+                />
+              </div>
+              {/* Filtro categoría */}
+              <select
+                value={filterCategoriaId}
+                onChange={e => setFilterCategoriaId(e.target.value)}
+                className="px-3 py-3 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-700"
+              >
+                <option value="">Todas las categorías</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.nombre_categoria}</option>)}
+              </select>
+              {/* Filtro estado */}
+              <select
+                value={filterEstado}
+                onChange={e => setFilterEstado(e.target.value)}
+                className="px-3 py-3 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-700"
+              >
+                <option value="">Todos los estados</option>
+                <option value="Activo">Activo</option>
+                <option value="Inactivo">Inactivo</option>
+              </select>
+              {/* Filtro stock bajo */}
+              <button
+                onClick={() => setFilterLowStock(!filterLowStock)}
+                className={`px-3 py-3 text-sm border-2 rounded-xl font-semibold transition-all ${
+                  filterLowStock ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-gray-200 text-gray-600 hover:border-orange-300'
+                }`}
+              >
+                ⚠ Stock 0
+              </button>
+              {(searchTerm || filterCategoriaId || filterEstado || filterLowStock) && (
+                <button
+                  onClick={() => { setSearchTerm(''); setFilterCategoriaId(''); setFilterEstado(''); setFilterLowStock(false) }}
+                  className="text-sm text-red-500 hover:underline font-semibold"
+                >
+                  ✕ Limpiar
+                </button>
+              )}
             </div>
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm flex-shrink-0">
               <span className="text-gray-600">Mostrando</span>
-              <span className="font-bold text-green-600">{filteredProducts.length}</span>
-              <span className="text-gray-600">registros</span>
+              <span className="font-bold text-green-600">{products.length}</span>
+              <span className="text-gray-600">de</span>
+              <span className="font-bold text-gray-900">{totalCount.toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -913,14 +962,14 @@ export default function InventoryTab() {
                     </div>
                   </td>
                 </tr>
-              ) : filteredProducts.length === 0 ? (
+              ) : products.length === 0 ? (
                 <tr>
                   <td colSpan={16} className="px-6 py-16 text-center text-gray-500">
                     No se encontraron productos
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((product) => (
+                products.map((product: Product) => (
                   <tr key={product.id} className="hover:bg-gradient-to-r hover:from-green-50/30 hover:to-emerald-50/30 transition-all">
                     
                     {/* Producto */}
@@ -1088,14 +1137,54 @@ export default function InventoryTab() {
           </table>
         </div>
 
-        <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-4 border-t-2 border-gray-200 flex items-center justify-between">
-           <span className="text-sm text-gray-600">
-             Mostrando <span className="font-bold text-gray-900">{filteredProducts.length}</span> de <span className="font-bold text-gray-900">{products.length}</span> productos
-           </span>
-           <div className="flex gap-2">
-             <button className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 font-medium transition-all" disabled>Anterior</button>
-             <button className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 font-medium transition-all" disabled>Siguiente</button>
-           </div>
+        <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-4 border-t-2 border-gray-200 flex items-center justify-between flex-wrap gap-3">
+          <span className="text-sm text-gray-600">
+            Página <span className="font-bold text-gray-900">{page + 1}</span> de <span className="font-bold text-gray-900">{Math.max(totalPages, 1)}</span>
+            &nbsp;·&nbsp;
+            <span className="font-bold text-gray-900">{totalCount.toLocaleString()}</span> productos en total
+          </span>
+          <div className="flex items-center gap-2">
+            {/* Ir a la primera */}
+            <button
+              onClick={() => setPage(0)}
+              disabled={page === 0 || loading}
+              className="px-3 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 font-medium transition-all"
+            >{`«`}</button>
+            {/* Anterior */}
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0 || loading}
+              className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 font-medium transition-all"
+            >Anterior</button>
+            {/* Páginas numéricas */}
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              const startPage = Math.max(0, Math.min(page - 2, totalPages - 5))
+              const pageNum = startPage + i
+              return (
+                <button key={pageNum}
+                  onClick={() => setPage(pageNum)}
+                  disabled={loading}
+                  className={`px-4 py-2 text-sm rounded-lg border-2 font-bold transition-all ${
+                    pageNum === page
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-white border-gray-200 hover:bg-gray-50'
+                  }`}
+                >{pageNum + 1}</button>
+              )
+            })}
+            {/* Siguiente */}
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1 || loading}
+              className="px-4 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 font-medium transition-all"
+            >Siguiente</button>
+            {/* Ir a la última */}
+            <button
+              onClick={() => setPage(totalPages - 1)}
+              disabled={page >= totalPages - 1 || loading}
+              className="px-3 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 font-medium transition-all"
+            >{`»`}</button>
+          </div>
         </div>
 
       </div>

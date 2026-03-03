@@ -29,20 +29,20 @@ type SavedPoint = {
   label: string
   color: string
   zona_id: string | null
-  zonas?: any   // puede venir como objeto o array según Supabase
+  zones?: any   // join de la tabla zones (puede venir como objeto o array)
 }
 
 // Supabase a veces devuelve el join como objeto, a veces como array
-const getZonaName = (zonas: any): string | null => {
-  if (!zonas) return null
-  if (Array.isArray(zonas)) return zonas[0]?.codigo_zona || null
-  return zonas.codigo_zona || null
+const getZonaName = (zones: any): string | null => {
+  if (!zones) return null
+  if (Array.isArray(zones)) return zones[0]?.codigo_zona || null
+  return zones.codigo_zona || null
 }
 
 type Zona = {
   id: string
   codigo_zona: string
-  descripcion: string
+  name: string
 }
 
 const COLORS = [
@@ -116,9 +116,9 @@ export default function ZonasEditorPage() {
   useEffect(() => {
     const fetchData = async () => {
       const [zonasRes, pointsRes] = await Promise.all([
-        supabase.from('zonas').select('id, codigo_zona, descripcion').order('codigo_zona'),
+        supabase.from('zones').select('id, codigo_zona, name').order('codigo_zona'),
         supabase.from('route_points')
-          .select('id, latitude, longitude, label, color, zona_id, zonas:zona_id(codigo_zona, descripcion)')
+          .select('id, latitude, longitude, label, color, zona_id, zones:zona_id(codigo_zona, name)')
           .order('created_at', { ascending: false })
           .limit(1000)
       ])
@@ -179,7 +179,7 @@ export default function ZonasEditorPage() {
       )
       if (data) {
         const zona = resolvedZonaId ? zonas.find(z => z.id === resolvedZonaId) || null : null
-        setSavedPoints(prev => [{ ...data, zonas: zona } as any, ...prev])
+        setSavedPoints(prev => [{ ...data, zones: zona } as any, ...prev])
       }
     } catch (err: any) {
       setPendingPoints(prev =>
@@ -232,7 +232,7 @@ export default function ZonasEditorPage() {
     if (!error) {
       setSavedPoints(prev =>
         prev.map(p => ids.includes(p.id)
-          ? { ...p, zona_id: assignToZonaId, zonas: zona || null }
+          ? { ...p, zona_id: assignToZonaId, zones: zona || null }
           : p
         )
       )
@@ -490,7 +490,7 @@ export default function ZonasEditorPage() {
                   >
                     <option value="">— Sin ruta (asignar después) —</option>
                     {zonas.map(z => (
-                      <option key={z.id} value={z.id}>{z.codigo_zona} — {z.descripcion}</option>
+                      <option key={z.id} value={z.id}>{z.codigo_zona} — {z.name}</option>
                     ))}
                   </select>
                 )}
@@ -605,7 +605,7 @@ export default function ZonasEditorPage() {
                       <option value="">Todas las rutas</option>
                       <option value="__none__">Sin ruta</option>
                       {zonas.map(z => (
-                        <option key={z.id} value={z.id}>{z.codigo_zona} — {z.descripcion}</option>
+                        <option key={z.id} value={z.id}>{z.codigo_zona} — {z.name}</option>
                       ))}
                     </select>
 
@@ -623,7 +623,7 @@ export default function ZonasEditorPage() {
                             <span className="flex-1 font-semibold text-gray-700 truncate">{p.label}</span>
                             {p.zona_id ? (
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 flex-shrink-0">
-                                {getZonaName(p.zonas) || '?'}
+                                {getZonaName(p.zones) || '?'}
                               </span>
                             ) : (
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 flex-shrink-0">Sin ruta</span>
@@ -812,7 +812,7 @@ export default function ZonasEditorPage() {
                       <option value="">— Seleccionar ruta destino —</option>
                       {zonas.map(z => (
                         <option key={z.id} value={z.id}>
-                          {z.codigo_zona} — {z.descripcion}
+                          {z.codigo_zona} — {z.name}
                         </option>
                       ))}
                     </select>
@@ -887,7 +887,7 @@ export default function ZonasEditorPage() {
                     <option value="">Todas las rutas</option>
                     <option value="__none__">Sin ruta asignada</option>
                     {zonas.map(z => (
-                      <option key={z.id} value={z.id}>{z.codigo_zona} — {z.descripcion}</option>
+                      <option key={z.id} value={z.id}>{z.codigo_zona} — {z.name}</option>
                     ))}
                   </select>
 
@@ -1050,9 +1050,9 @@ export default function ZonasEditorPage() {
                           </div>
 
                           {/* Badge de ruta */}
-                          {p.zonas ? (
+                          {p.zones ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 truncate text-center">
-                              🗺️ {p.zonas.codigo_zona}
+                              🗺️ {getZonaName(p.zones) || p.zones?.codigo_zona || '?'}
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 text-center">

@@ -5,22 +5,25 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useFormPersistence } from '@/hooks/useFormPersistence'
-import { 
-  Search, 
-  Users, 
-  ShieldCheck, 
+import {
+  Search,
+  Users,
+  ShieldCheck,
   AlertCircle,
-  MapPin,
   Edit2,
   Trash2,
   X,
   Save,
   Loader2,
-  Briefcase
+  Briefcase,
+  Route,
+  Check,
+  CheckSquare,
+  Square,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-// Definicion de tipos de datos
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 type Employee = {
   id: string
   full_name: string
@@ -35,61 +38,58 @@ type Employee = {
 type Zone = {
   id: string
   codigo_zona: string
-  descripcion: string
-  territorio: string
-  estado: string
+  name: string
   vendedor_id: string | null
 }
 
+// ─── Componente principal ─────────────────────────────────────────────────────
 export default function EmployeesManagement() {
   const router = useRouter()
-  
-  // Estados de carga de datos
+
+  // Datos
   const [employees, setEmployees] = useState<Employee[]>([])
   const [zones, setZones] = useState<Zone[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [mounted, setMounted] = useState(false)
-  
-  // Estados del formulario
+
+  // Modal de asignación de rutas
+  const [routeModalEmployee, setRouteModalEmployee] = useState<Employee | null>(null)
+  const [selectedZoneIds, setSelectedZoneIds] = useState<Set<string>>(new Set())
+  const [zoneSearch, setZoneSearch] = useState('')
+  const [savingRoutes, setSavingRoutes] = useState(false)
+  const [routeSaveSuccess, setRouteSaveSuccess] = useState(false)
+
+  // Formulario
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  
-  const {
-    formData,
-    setFormData,
-    clearForm
-  } = useFormPersistence('empleados_form', {
+
+  const { formData, setFormData, clearForm } = useFormPersistence('empleados_form', {
     full_name: '',
     email: '',
     phone: '',
     password: '',
     job_title: 'Preventista',
-    zone_id: ''
   })
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  useEffect(() => { setMounted(true) }, [])
 
-  // Carga inicial de datos desde Supabase
+  // Carga inicial
   useEffect(() => {
     const fetchData = async () => {
       const supabase = createClient()
       try {
-        const [employeesResponse, zonesResponse] = await Promise.all([
+        const [empRes, zonesRes] = await Promise.all([
           supabase.from('employees').select('*').order('created_at', { ascending: false }),
-          supabase.from('zonas').select('*').order('codigo_zona', { ascending: true })
+          supabase.from('zones').select('id, codigo_zona, name, vendedor_id').order('codigo_zona', { ascending: true }),
         ])
-        
-        if (employeesResponse.error) throw employeesResponse.error
-        if (zonesResponse.error) throw zonesResponse.error
-        
-        if (employeesResponse.data) setEmployees(employeesResponse.data as any)
-        if (zonesResponse.data) setZones(zonesResponse.data as any)
+        if (empRes.error) throw empRes.error
+        if (zonesRes.error) throw zonesRes.error
+        if (empRes.data) setEmployees(empRes.data as any)
+        if (zonesRes.data) setZones(zonesRes.data as any)
       } catch (error) {
         console.error('Error cargando datos:', error)
       } finally {
@@ -99,7 +99,7 @@ export default function EmployeesManagement() {
     fetchData()
   }, [])
 
-  const filteredEmployees = employees.filter(emp => 
+  const filteredEmployees = employees.filter(emp =>
     emp.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.email.toLowerCase().includes(searchTerm.toLowerCase())
   )
@@ -108,6 +108,7 @@ export default function EmployeesManagement() {
   const totalPreventistas = employees.filter(e => e.job_title === 'Preventista').length
   const totalAdmins = employees.filter(e => e.role === 'Administrador').length
 
+  // ── Handlers formulario ──────────────────────────────────────────────────────
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
@@ -122,30 +123,25 @@ export default function EmployeesManagement() {
     }
   }
 
-  // Manejo del envio del formulario y sincronizacion
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
     setFormSuccess(false)
 
-    // Validaciones
     if (!formData.full_name || !formData.email || !formData.phone) {
       setFormError('Por favor completa todos los campos obligatorios.')
       return
     }
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(formData.email)) {
       setFormError('Por favor ingresa un correo electrónico válido.')
       return
     }
-
     const phoneDigits = formData.phone.replace(/\D/g, '')
     if (phoneDigits.length < 8) {
       setFormError('El teléfono debe tener al menos 8 dígitos.')
       return
     }
-
     if (!isEditing && (!formData.password || formData.password.length < 6)) {
       setFormError('La contraseña debe tener al menos 6 caracteres.')
       return
@@ -154,133 +150,55 @@ export default function EmployeesManagement() {
     try {
       const supabase = createClient()
       setFormLoading(true)
-      let newEmployeeId = editingId;
 
-      // 1. Logica de persistencia en Supabase (Cloud)
       if (isEditing && editingId) {
         const { error } = await supabase
           .from('employees')
-          .update({
-            full_name: formData.full_name,
-            email: formData.email,
-            phone: formData.phone,
-            job_title: formData.job_title
-          })
+          .update({ full_name: formData.full_name, email: formData.email, phone: formData.phone, job_title: formData.job_title })
           .eq('id', editingId)
-          
         if (error) throw error
-
-        // Actualizar asignacion de zona
-        if ('zone_id' in formData) {
-          await supabase
-            .from('zonas')
-            .update({ vendedor_id: null })
-            .eq('vendedor_id', editingId)
-
-          if (formData.zone_id) {
-            await supabase
-              .from('zonas')
-              .update({ vendedor_id: editingId })
-              .eq('id', formData.zone_id)
-          }
-          
-          const { data: updatedZones } = await supabase.from('zonas').select('*').order('codigo_zona', { ascending: true })
-          if (updatedZones) setZones(updatedZones as any)
-        }
-
-        setEmployees(employees.map(emp => 
-          emp.id === editingId 
+        setEmployees(employees.map(emp =>
+          emp.id === editingId
             ? { ...emp, full_name: formData.full_name, email: formData.email, phone: formData.phone, job_title: formData.job_title }
             : emp
         ))
-
       } else {
-        // Creacion de nuevo usuario mediante Edge Function
-        const { data, error: functionError } = await supabase.functions.invoke('create-user', {
-          body: {
-            email: formData.email,
-            password: formData.password,
-            full_name: formData.full_name,
-            job_title: formData.job_title,
-            phone: formData.phone
-          }
+        const { data, error: fnErr } = await supabase.functions.invoke('create-user', {
+          body: { email: formData.email, password: formData.password, full_name: formData.full_name, job_title: formData.job_title, phone: formData.phone },
         })
-
-        if (functionError) {
-          if (data?.error) throw new Error(data.error)
-          throw new Error(functionError.message || 'Error al conectar con el servidor')
-        }
-
+        if (fnErr) throw new Error(fnErr.message || 'Error al conectar con el servidor')
         if (data?.error) throw new Error(data.error)
         if (!data?.user) throw new Error('No se recibió información del usuario creado')
-        
-        newEmployeeId = data.user.id
-        
-        // Asignar zona al nuevo empleado
-        if (formData.zone_id) {
-           await supabase
-            .from('zonas')
-            .update({ vendedor_id: newEmployeeId })
-            .eq('id', formData.zone_id)
-           
-           const { data: updatedZones } = await supabase.from('zonas').select('*').order('codigo_zona', { ascending: true })
-           if (updatedZones) setZones(updatedZones as any)
-        }
 
-        const { data: newEmployees } = await supabase
-          .from('employees')
-          .select('*')
-          .order('created_at', { ascending: false })
-        if (newEmployees) setEmployees(newEmployees as any)
+        const { data: newEmps } = await supabase.from('employees').select('*').order('created_at', { ascending: false })
+        if (newEmps) setEmployees(newEmps as any)
       }
 
-      // 2. Sincronizacion con SQL Server Local
-      // Se envia la entidad EMPLOYEE al endpoint maestro de sincronizacion
+      // Sincronización SQL Server
       try {
-        const syncResponse = await fetch('/api/sync/master', {
+        await fetch('/api/sync/master', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             entity: 'EMPLOYEE',
-            data: {
-              code: formData.email, // Usamos el email como identificador unico temporal
-              name: formData.full_name,
-              phone: formData.phone,
-              job_title: formData.job_title
-            }
+            data: { code: formData.email, name: formData.full_name, phone: formData.phone, job_title: formData.job_title },
           }),
-        });
-
-        if (!syncResponse.ok) {
-          console.warn('Advertencia: Empleado guardado en nube pero la sincronizacion local fallo o esta pendiente.')
-        }
-      } catch (syncError) {
-        console.error('Error de red al intentar sincronizar empleado con SQL Server:', syncError)
+        })
+      } catch (syncErr) {
+        console.warn('Sincronización local omitida:', syncErr)
       }
 
-      // Finalizacion exitosa
       setFormSuccess(true)
       clearForm()
       setIsEditing(false)
       setEditingId(null)
-
-      setTimeout(() => {
-        setFormSuccess(false)
-      }, 3000)
-
+      setTimeout(() => setFormSuccess(false), 3000)
     } catch (err: any) {
-      let errorMessage = 'Ocurrió un error inesperado'
-      if (err.message.includes('duplicate') || err.message.includes('already exists') || err.message.includes('ya existe')) {
-        errorMessage = 'Este correo electrónico ya está registrado'
-      } else if (err.message.includes('network') || err.message.includes('fetch')) {
-        errorMessage = 'Error de conexión. Verifica tu internet'
-      } else if (err.message) {
-        errorMessage = err.message
-      }
-      
-      setFormError(errorMessage)
+      let msg = 'Ocurrió un error inesperado'
+      if (err.message?.includes('duplicate') || err.message?.includes('already exists')) msg = 'Este correo electrónico ya está registrado'
+      else if (err.message?.includes('network') || err.message?.includes('fetch')) msg = 'Error de conexión. Verifica tu internet'
+      else if (err.message) msg = err.message
+      setFormError(msg)
     } finally {
       setFormLoading(false)
     }
@@ -290,520 +208,490 @@ export default function EmployeesManagement() {
     setFormData({
       full_name: employee.full_name,
       email: employee.email,
-      phone: employee.phone,
+      phone: employee.phone ?? '',
       password: '',
       job_title: employee.job_title || 'Preventista',
-      zone_id: zones.find(z => z.vendedor_id === employee.id)?.id || ''
     })
     setIsEditing(true)
     setEditingId(employee.id)
     setFormError(null)
     setFormSuccess(false)
-    
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleDeleteEmployee = async (employee: Employee) => {
     const supabase = createClient()
-    if (!confirm(`¿Estás seguro de desactivar al empleado "${employee.full_name}"?`)) {
-      return
-    }
-
+    if (!confirm(`¿Estás seguro de desactivar al empleado "${employee.full_name}"?`)) return
     try {
-      const { error } = await supabase
-        .from('employees')
-        .update({ status: 'Deshabilitado' })
-        .eq('id', employee.id)
-
+      const { error } = await supabase.from('employees').update({ status: 'Deshabilitado' }).eq('id', employee.id)
       if (error) throw error
-
-      setEmployees(employees.map(emp => 
-        emp.id === employee.id ? { ...emp, status: 'Deshabilitado' } : emp
-      ))
-
+      setEmployees(employees.map(emp => emp.id === employee.id ? { ...emp, status: 'Deshabilitado' } : emp))
     } catch (err: any) {
       console.error('Error desactivando empleado:', err)
       alert('Error al desactivar el empleado')
     }
   }
 
+  // ── Modal de rutas ───────────────────────────────────────────────────────────
+  const handleOpenRouteModal = (employee: Employee) => {
+    setSelectedZoneIds(new Set(zones.filter(z => z.vendedor_id === employee.id).map(z => z.id)))
+    setZoneSearch('')
+    setRouteSaveSuccess(false)
+    setRouteModalEmployee(employee)
+  }
+
+  const toggleZone = (zoneId: string) => {
+    setSelectedZoneIds(prev => {
+      const next = new Set(prev)
+      if (next.has(zoneId)) next.delete(zoneId)
+      else next.add(zoneId)
+      return next
+    })
+  }
+
+  const handleSaveRoutes = async () => {
+    if (!routeModalEmployee) return
+    const supabase = createClient()
+    setSavingRoutes(true)
+    try {
+      const empId = routeModalEmployee.id
+      const currentlyAssigned = zones.filter(z => z.vendedor_id === empId).map(z => z.id)
+      const toAssign = Array.from(selectedZoneIds).filter(id => !currentlyAssigned.includes(id))
+      const toUnassign = currentlyAssigned.filter(id => !selectedZoneIds.has(id))
+
+      await Promise.all([
+        ...toAssign.map(id => supabase.from('zones').update({ vendedor_id: empId }).eq('id', id)),
+        ...toUnassign.map(id => supabase.from('zones').update({ vendedor_id: null }).eq('id', id)),
+      ])
+
+      const { data: updatedZones } = await supabase.from('zones').select('id, codigo_zona, name, vendedor_id').order('codigo_zona')
+      if (updatedZones) setZones(updatedZones as any)
+
+      setRouteSaveSuccess(true)
+      setTimeout(() => setRouteSaveSuccess(false), 2000)
+    } catch (err) {
+      console.error('Error asignando rutas:', err)
+    } finally {
+      setSavingRoutes(false)
+    }
+  }
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
-      
-      {/* Elementos decorativos de fondo */}
-      <div className="fixed inset-0 z-0 pointer-events-none opacity-35" 
-           style={{
-             backgroundImage: `
-               repeating-linear-gradient(
-                 45deg, 
-                 transparent, 
-                 transparent 35px, 
-                 rgba(16, 185, 129, 0.25) 35px, 
-                 rgba(16, 185, 129, 0.25) 39px
-               ),
-               repeating-linear-gradient(
-                 -45deg, 
-                 transparent, 
-                 transparent 35px, 
-                 rgba(16, 185, 129, 0.25) 35px, 
-                 rgba(16, 185, 129, 0.25) 39px
-               )
-             `,
-           }}>
-      </div>
-      
-      <div className="fixed inset-0 z-0 pointer-events-none opacity-25" 
-           style={{
-             backgroundImage: `radial-gradient(circle at 2px 2px, rgba(20, 184, 166, 0.12) 1px, transparent 1px)`,
-             backgroundSize: '48px 48px'
-           }}>
-      </div>
-      
-      <div className="fixed inset-0 z-0 bg-gradient-to-b from-white/40 via-transparent to-transparent pointer-events-none"></div>
-      
-      {/* Formas geometricas de fondo */}
-      <div className="fixed -top-24 -left-24 w-96 h-96 bg-green-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      <div className="fixed top-32 left-32 w-64 h-64 bg-emerald-300/20 rounded-full blur-2xl z-0 pointer-events-none"></div>
-      <div className="fixed -top-32 -right-32 w-[500px] h-[500px] bg-teal-200/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-100/20 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      <div className="fixed -bottom-40 -left-20 w-[450px] h-[450px] bg-green-300/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      <div className="fixed -bottom-20 -right-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
-      
-      {/* Contenido principal de la pagina */}
-      <div className="relative z-10 space-y-6">
-      
-      {/* Encabezado */}
-      <div className="sticky top-0 z-50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-lg border-2 border-green-100 backdrop-blur-sm">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 bg-clip-text text-transparent">
-            Gestión de Empleados
-          </h1>
-          <p className="text-gray-600 text-sm mt-2 font-medium">Administra tu equipo, asigna roles y controla accesos</p>
-        </div>
-      </div>
 
-      {/* Tarjetas de Indicadores (KPIs) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
-        
-        <div className="group relative bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-green-400 hover:scale-105">
-          <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
-                <Users className="w-7 h-7 text-white" />
-              </div>
-              <span className="text-xs font-bold bg-white text-green-600 px-4 py-1.5 rounded-full shadow-md">
-                TOTAL
-              </span>
-            </div>
-            <h3 className="text-4xl font-black mb-1 text-white">{totalEmployees}</h3>
-            <p className="text-sm text-green-50 font-semibold">Empleados activos</p>
+      {/* Fondo decorativo */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-35"
+        style={{
+          backgroundImage: `
+            repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(16,185,129,0.25) 35px, rgba(16,185,129,0.25) 39px),
+            repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(16,185,129,0.25) 35px, rgba(16,185,129,0.25) 39px)
+          `,
+        }} />
+
+      <div className="relative z-10 max-w-7xl mx-auto space-y-8">
+
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-black text-gray-900 tracking-tight">Gestión de Empleados</h1>
+            <p className="text-gray-600 mt-1 font-medium">Administra el equipo y sus rutas asignadas</p>
           </div>
         </div>
 
-        <div className="group relative bg-gradient-to-br from-red-500 via-red-600 to-rose-600 p-6 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-red-400 hover:scale-105">
-          <div className="absolute inset-0 bg-white/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div className="relative">
+        {/* KPIs */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-6 rounded-2xl shadow-lg text-white">
             <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg">
-                <ShieldCheck className="w-7 h-7 text-white" />
-              </div>
-              <span className="text-xs font-bold bg-white text-red-600 px-4 py-1.5 rounded-full shadow-md">
-                ADMINS
-              </span>
+              <div className="p-3 bg-white/20 rounded-xl"><Users className="w-6 h-6" /></div>
+              <span className="text-xs font-semibold bg-white/20 px-3 py-1 rounded-full">TOTAL</span>
             </div>
-            <h3 className="text-4xl font-black mb-1 text-white">{totalAdmins}</h3>
-            <p className="text-sm text-red-50 font-semibold">Acceso total</p>
+            <h3 className="text-3xl font-bold mb-1">{totalEmployees}</h3>
+            <p className="text-sm text-green-100">Empleados registrados</p>
+          </div>
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl shadow-lg text-white">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-white/20 rounded-xl"><Briefcase className="w-6 h-6" /></div>
+              <span className="text-xs font-semibold bg-white/20 px-3 py-1 rounded-full">PREVENTISTAS</span>
+            </div>
+            <h3 className="text-3xl font-bold mb-1">{totalPreventistas}</h3>
+            <p className="text-sm text-blue-100">Vendedores activos</p>
+          </div>
+          <div className="bg-gradient-to-br from-red-500 to-rose-600 p-6 rounded-2xl shadow-lg text-white">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-white/20 rounded-xl"><ShieldCheck className="w-6 h-6" /></div>
+              <span className="text-xs font-semibold bg-white/20 px-3 py-1 rounded-full">ADMINS</span>
+            </div>
+            <h3 className="text-3xl font-bold mb-1">{totalAdmins}</h3>
+            <p className="text-sm text-red-100">Administradores</p>
           </div>
         </div>
-      </div>
 
-      {/* Formulario de Registro/Edicion */}
-      <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
-        <div className="bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-4 bg-white rounded-2xl shadow-lg">
-                <Users className="w-7 h-7 text-green-600" />
+        {/* Formulario */}
+        <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
+          <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-6">
+            <h2 className="text-xl font-black text-white flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-xl"><Users className="w-5 h-5" /></div>
+              {isEditing ? 'Editar Empleado' : 'Nuevo Empleado'}
+            </h2>
+            <p className="text-green-100 text-sm mt-1">
+              {isEditing ? 'Modifica los datos del empleado' : 'Completa los datos para agregar un nuevo miembro al equipo'}
+            </p>
+          </div>
+
+          <div className="p-8">
+            {formError && (
+              <div className="mb-6 flex items-start gap-3 p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-2xl">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <p className="text-sm font-semibold">{formError}</p>
               </div>
-              <div>
-                <h2 className="text-2xl font-black text-white">
-                  {isEditing ? 'Editar Empleado' : 'Nuevo Empleado'}
-                </h2>
-                <p className="text-sm text-green-50 mt-1 font-medium">
-                  {isEditing ? 'Actualiza la información del empleado' : 'Completa los datos para agregar un nuevo empleado'}
-                </p>
-              </div>
-            </div>
-            {isEditing && (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsEditing(false)
-                  setEditingId(null)
-                  clearForm()
-                  setFormError(null)
-                }}
-                className="text-sm text-white hover:text-green-100 font-bold px-4 py-2 bg-white/20 rounded-xl hover:bg-white/30 transition-all"
-              >
-                Cancelar edición
-              </button>
             )}
-          </div>
-        </div>
-
-        <div className="p-8">
-          {formError && (
-            <div className="mb-6 flex items-start gap-3 bg-red-50 border-2 border-red-300 text-red-700 p-5 rounded-2xl shadow-lg">
-              <AlertCircle className="w-6 h-6 flex-shrink-0 mt-0.5 text-red-600" />
-              <div>
-                <p className="font-bold text-base">Error</p>
-                <p className="text-sm mt-1">{formError}</p>
-              </div>
-            </div>
-          )}
-
-          {formSuccess && (
-            <div className="mb-6 flex items-start gap-3 bg-green-50 border-2 border-green-300 text-green-700 p-5 rounded-2xl shadow-lg">
-              <Users className="w-6 h-6 flex-shrink-0 mt-0.5 text-green-600" />
-              <div>
-                <p className="font-bold text-base">¡Éxito!</p>
-                <p className="text-sm mt-1">
-                  {isEditing ? 'El empleado ha sido actualizado correctamente.' : 'El empleado ha sido registrado correctamente.'}
+            {formSuccess && (
+              <div className="mb-6 flex items-start gap-3 p-4 bg-emerald-50 border-2 border-emerald-200 text-emerald-700 rounded-2xl">
+                <Check className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <p className="text-sm font-semibold">
+                  {isEditing ? '¡Empleado actualizado exitosamente!' : '¡Empleado creado exitosamente!'}
                 </p>
               </div>
-            </div>
-          )}
+            )}
 
-          <form onSubmit={handleSubmit} className="space-y-8">
-            
-            <div className="space-y-5">
-              <div className="flex items-center gap-3 pb-3 border-b-4 border-green-500">
-                <div className="w-2 h-8 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full shadow-lg"></div>
-                <h3 className="text-base font-black text-gray-900 uppercase tracking-wider">
-                  Datos Personales
-                </h3>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <form onSubmit={handleSubmit}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="block text-sm font-bold text-gray-800">
-                    Nombre Completo <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="full_name"
-                    value={formData.full_name}
-                    onChange={handleChange}
-                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300"
-                    placeholder="Juan Pérez"
-                    required
-                  />
+                  <label className="block text-sm font-bold text-gray-800">Nombre Completo <span className="text-red-500">*</span></label>
+                  <input type="text" name="full_name" value={formData.full_name ?? ''} onChange={handleChange}
+                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all"
+                    placeholder="Juan Pérez" required />
                 </div>
-
                 <div className="space-y-2">
-                  <label className="block text-sm font-bold text-gray-800">
-                    Correo Electrónico <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300"
-                    placeholder="empleado@empresa.com"
-                    required
-                  />
+                  <label className="block text-sm font-bold text-gray-800">Correo Electrónico <span className="text-red-500">*</span></label>
+                  <input type="email" name="email" value={formData.email ?? ''} onChange={handleChange}
+                    disabled={isEditing}
+                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    placeholder="correo@empresa.com" required />
                 </div>
-
                 <div className="space-y-2">
-                  <label className="block text-sm font-bold text-gray-800">
-                    Teléfono <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300"
-                    placeholder="77712345"
-                    required
-                  />
+                  <label className="block text-sm font-bold text-gray-800">Teléfono <span className="text-red-500">*</span></label>
+                  <input type="tel" name="phone" value={formData.phone ?? ''} onChange={handleChange}
+                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all"
+                    placeholder="77712345" required />
                 </div>
-              </div>
-            </div>
-
-            <div className="space-y-5">
-              <div className="flex items-center gap-3 pb-3 border-b-4 border-green-500">
-                <div className="w-2 h-8 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full shadow-lg"></div>
-                <h3 className="text-base font-black text-gray-900 uppercase tracking-wider">
-                  Cuenta y Acceso
-                </h3>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                
-                <div className="space-y-3">
-                  <label className="block text-sm font-bold text-gray-800">
-                    Rol / Cargo <span className="text-red-500">*</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, job_title: 'Preventista' })}
-                      className={`flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 transition-all duration-300 shadow-lg hover:shadow-xl ${
-                        (mounted ? formData.job_title : 'Preventista') === 'Preventista'
-                          ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white border-green-400 scale-105'
-                          : 'bg-white text-gray-700 border-gray-200 hover:border-green-400 hover:bg-green-50'
-                      }`}
-                    >
-                      <Briefcase className="w-7 h-7" />
-                      <span className="text-sm font-black">Preventista</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, job_title: 'Administrador' })}
-                      className={`flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 transition-all duration-300 shadow-lg hover:shadow-xl ${
-                        (mounted ? formData.job_title : 'Preventista') === 'Administrador'
-                          ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white border-red-400 scale-105'
-                          : 'bg-white text-gray-700 border-gray-200 hover:border-red-400 hover:bg-red-50'
-                      }`}
-                    >
-                      <ShieldCheck className="w-7 h-7" />
-                      <span className="text-sm font-black">Administrador</span>
-                    </button>
-                  </div>
-                </div>
-
                 {!isEditing && (
                   <div className="space-y-2">
-                    <label className="block text-sm font-bold text-gray-800">
-                      Contraseña Temporal <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="password"
-                      name="password"
-                      value={formData.password}
-                      onChange={handleChange}
-                      className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300"
-                      placeholder="******"
-                      required={!isEditing}
-                    />
-                    <p className="text-xs text-gray-600 mt-1 font-medium">Mínimo 6 caracteres</p>
+                    <label className="block text-sm font-bold text-gray-800">Contraseña <span className="text-red-500">*</span></label>
+                    <input type="password" name="password" value={formData.password ?? ''} onChange={handleChange}
+                      className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all"
+                      placeholder="Mínimo 6 caracteres" />
                   </div>
                 )}
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-gray-800">Cargo</label>
+                  <select name="job_title" value={formData.job_title ?? 'Preventista'}
+                    onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
+                    className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all">
+                    <option value="Preventista">Preventista</option>
+                    <option value="Supervisor">Supervisor</option>
+                    <option value="Administrativo">Administrativo</option>
+                    <option value="Gerente">Gerente</option>
+                  </select>
+                </div>
               </div>
 
-              {(mounted && formData.job_title === 'Preventista') && (
-                <div className="space-y-5 pt-4">
-                  <div className="flex items-center gap-3 pb-3 border-b-4 border-green-500">
-                    <div className="w-2 h-8 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full shadow-lg"></div>
-                    <h3 className="text-base font-black text-gray-900 uppercase tracking-wider">
-                      Asignación de Zona
-                    </h3>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <label className="block text-sm font-bold text-gray-800">
-                      Seleccionar Zona
-                    </label>
-                    <select
-                      name="zone_id"
-                      value={formData.zone_id || ''}
-                      onChange={(e) => setFormData({ ...formData, zone_id: e.target.value })}
-                      className="w-full px-5 py-3.5 text-sm border-2 border-gray-200 rounded-2xl text-gray-900 focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300 bg-white"
-                    >
-                      <option value="">-- Sin asignar --</option>
-                      {zones.map((zone) => {
-                        const isAssigned = zone.vendedor_id !== null
-                        const assignedToCurrent = zone.vendedor_id === (editingId || '')
-                        
-                        if (!isAssigned || assignedToCurrent) {
-                          return (
-                            <option key={zone.id} value={zone.id}>
-                              {zone.codigo_zona} - {zone.descripcion}
-                            </option>
-                          )
-                        } else {
-                           const owner = employees.find(e => e.id === zone.vendedor_id)
-                           return (
-                             <option key={zone.id} value={zone.id} disabled className="text-gray-400">
-                               {zone.codigo_zona} - {zone.descripcion} (Asignado a {owner?.full_name || 'Otro'})
-                             </option>
-                           )
-                        }
-                      })}
-                    </select>
-                    <p className="text-xs text-gray-500 font-medium">
-                      Asigna una zona de ventas específica a este empleado.
-                    </p>
-                  </div>
+              {isEditing && (
+                <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-700 font-semibold">
+                  💡 Para asignar rutas a este empleado, usa el botón <span className="inline-flex items-center gap-1"><Route className="w-3 h-3" /> Rutas</span> en la tabla.
                 </div>
               )}
-            </div>
 
-            <div className="flex gap-4 pt-6 border-t-2 border-gray-100">
-              <button
-                type="button"
-                onClick={handleClearForm}
-                className="px-8 py-4 border-2 border-red-300 text-red-700 bg-red-50 rounded-2xl hover:bg-red-100 hover:border-red-400 font-bold transition-all shadow-md hover:shadow-lg flex items-center gap-2"
-              >
-                <X className="w-5 h-5" />
-                Limpiar
-              </button>
-              <button
-                type="submit"
-                disabled={formLoading}
-                className={`flex-1 flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-white font-black transition-all shadow-xl ${
-                  formLoading
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 hover:from-green-600 hover:via-green-700 hover:to-emerald-700 hover:shadow-2xl hover:scale-105'
-                }`}
-              >
-                {formLoading ? (
-                  <>
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-6 h-6" />
-                    {isEditing ? 'Actualizar Empleado' : 'Crear Empleado'}
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
-        
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-5 border-b-2 border-green-200">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="relative flex-1 w-full max-w-2xl">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-green-600" />
-              <input 
-                type="text"
-                placeholder="Buscar por nombre, correo o cargo..."
-                className="w-full pl-14 pr-5 py-4 text-sm border-2 border-green-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all shadow-sm hover:border-green-300 bg-white font-medium"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center gap-2 text-sm bg-white px-5 py-3 rounded-xl border-2 border-green-200 shadow-sm">
-              <span className="text-gray-600 font-medium">Mostrando</span>
-              <span className="font-black text-green-600 text-base">{filteredEmployees.length}</span>
-              <span className="text-gray-600 font-medium">resultados</span>
-            </div>
+              <div className="flex gap-4 pt-8">
+                <button type="button" onClick={handleClearForm}
+                  className="px-8 py-4 border-2 border-orange-200 text-orange-700 bg-orange-50 rounded-2xl hover:bg-orange-100 font-bold transition-all flex items-center gap-2">
+                  <X className="w-5 h-5" /> Limpiar
+                </button>
+                <button type="submit" disabled={formLoading}
+                  className={`flex-1 flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-white font-black transition-all shadow-xl ${
+                    formLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 hover:scale-105'
+                  }`}>
+                  {formLoading
+                    ? <><Loader2 className="w-6 h-6 animate-spin" /> Guardando...</>
+                    : <><Save className="w-6 h-6" /> {isEditing ? 'Actualizar Empleado' : 'Crear Empleado'}</>}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gradient-to-r from-green-100 to-emerald-100 border-b-4 border-green-300">
-                <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Empleado</th>
-                <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Contacto</th>
-                <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Rol/Cargo</th>
-                <th className="px-6 py-5 text-center text-xs font-black text-gray-800 uppercase tracking-wider">Estado</th>
-                <th className="px-6 py-5 text-center text-xs font-black text-gray-800 uppercase tracking-wider">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center justify-center gap-4">
-                      <Loader2 className="w-12 h-12 text-green-600 animate-spin" />
-                      <p className="text-gray-700 font-bold text-lg">Cargando empleados...</p>
-                    </div>
-                  </td>
+        {/* Tabla de empleados */}
+        <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
+
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-5 border-b-2 border-green-200">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="relative flex-1 w-full max-w-2xl">
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-green-600" />
+                <input type="text"
+                  placeholder="Buscar por nombre o correo..."
+                  className="w-full pl-14 pr-5 py-4 text-sm border-2 border-green-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-200 focus:border-green-500 transition-all bg-white font-medium"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)} />
+              </div>
+              <div className="flex items-center gap-2 text-sm bg-white px-5 py-3 rounded-xl border-2 border-green-200">
+                <span className="text-gray-600 font-medium">Mostrando</span>
+                <span className="font-black text-green-600 text-base">{filteredEmployees.length}</span>
+                <span className="text-gray-600 font-medium">resultados</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gradient-to-r from-green-100 to-emerald-100 border-b-4 border-green-300">
+                  <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Empleado</th>
+                  <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Contacto</th>
+                  <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Cargo</th>
+                  <th className="px-6 py-5 text-left text-xs font-black text-gray-800 uppercase tracking-wider">Rutas Asignadas</th>
+                  <th className="px-6 py-5 text-center text-xs font-black text-gray-800 uppercase tracking-wider">Estado</th>
+                  <th className="px-6 py-5 text-center text-xs font-black text-gray-800 uppercase tracking-wider">Acciones</th>
                 </tr>
-              ) : filteredEmployees.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center text-gray-600 font-semibold text-lg">
-                    No se encontraron empleados
-                  </td>
-                </tr>
-              ) : (
-                filteredEmployees.map((emp) => (
-                  <tr key={emp.id} className="hover:bg-gradient-to-r hover:from-green-50/50 hover:to-emerald-50/50 transition-all">
-                    <td className="px-6 py-6">
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white font-black text-xl shadow-lg">
-                          {emp.full_name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-gray-900">{emp.full_name}</p>
-                          <p className="text-xs text-gray-500 font-medium">ID: {emp.id.slice(0, 8)}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-6">
-                      <div className="text-sm text-gray-800 font-bold">{emp.email}</div>
-                      <div className="text-xs text-gray-600 mt-1 font-medium">{emp.phone}</div>
-                    </td>
-                    <td className="px-6 py-6">
-                      {emp.role === 'Administrador' ? (
-                        <span className="inline-flex items-center px-4 py-2 rounded-xl text-xs font-black bg-red-100 text-red-700 border-2 border-red-300 shadow-md">
-                          Administrador
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-4 py-2 rounded-xl text-xs font-black bg-green-100 text-green-700 border-2 border-green-300 shadow-md">
-                          {emp.job_title || 'Preventista'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-6 text-center">
-                      <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black bg-emerald-100 text-emerald-700 border-2 border-emerald-300 shadow-md">
-                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                        Activo
-                      </span>
-                    </td>
-                    <td className="px-6 py-6">
-                      <div className="flex items-center justify-center gap-2">
-                        <button 
-                          onClick={() => handleEditClick(emp)}
-                          className="p-3 text-gray-700 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all border-2 border-transparent hover:border-green-300 shadow-sm hover:shadow-md" 
-                          title="Editar"
-                        >
-                          <Edit2 className="w-5 h-5" />
-                        </button>
-                        <button 
-                          className="p-3 text-gray-700 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all border-2 border-transparent hover:border-emerald-300 shadow-sm hover:shadow-md" 
-                          title="Ver Rutas"
-                        >
-                          <MapPin className="w-5 h-5" />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteEmployee(emp)}
-                          className="p-3 text-gray-700 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border-2 border-transparent hover:border-red-300 shadow-sm hover:shadow-md" 
-                          title="Desactivar"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-20 text-center">
+                      <div className="flex flex-col items-center gap-4">
+                        <Loader2 className="w-12 h-12 text-green-600 animate-spin" />
+                        <p className="text-gray-700 font-bold text-lg">Cargando empleados...</p>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : filteredEmployees.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-20 text-center text-gray-600 font-semibold text-lg">
+                      No se encontraron empleados
+                    </td>
+                  </tr>
+                ) : (
+                  filteredEmployees.map((emp) => {
+                    const empZones = zones.filter(z => z.vendedor_id === emp.id)
+                    return (
+                      <tr key={emp.id} className="hover:bg-gradient-to-r hover:from-green-50/50 hover:to-emerald-50/50 transition-all">
 
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-5 border-t-4 border-green-300 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <span className="text-sm text-gray-700 font-bold">
-            Página 1 de 1
-          </span>
-          <div className="flex gap-3">
-            <button className="px-6 py-3 text-sm border-2 border-green-200 rounded-xl bg-white hover:bg-green-50 hover:border-green-400 disabled:opacity-50 disabled:hover:bg-white disabled:hover:border-green-200 font-bold transition-all shadow-md" disabled>Anterior</button>
-            <button className="px-6 py-3 text-sm border-2 border-green-200 rounded-xl bg-white hover:bg-green-50 hover:border-green-400 disabled:opacity-50 disabled:hover:bg-white disabled:hover:border-green-200 font-bold transition-all shadow-md" disabled>Siguiente</button>
+                        {/* Empleado */}
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white font-black text-lg shadow-lg flex-shrink-0">
+                              {emp.full_name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-gray-900">{emp.full_name}</p>
+                              <p className="text-xs text-gray-500 font-medium">ID: {emp.id.slice(0, 8)}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Contacto */}
+                        <td className="px-6 py-5">
+                          <div className="text-sm text-gray-800 font-bold">{emp.email}</div>
+                          <div className="text-xs text-gray-600 mt-1 font-medium">{emp.phone}</div>
+                        </td>
+
+                        {/* Cargo */}
+                        <td className="px-6 py-5">
+                          {emp.role === 'Administrador' ? (
+                            <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-black bg-red-100 text-red-700 border-2 border-red-300">
+                              Administrador
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-black bg-green-100 text-green-700 border-2 border-green-300">
+                              {emp.job_title || 'Preventista'}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Rutas asignadas */}
+                        <td className="px-6 py-5">
+                          {empZones.length === 0 ? (
+                            <span className="text-xs text-gray-400 italic">Sin rutas</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5 max-w-[240px]">
+                              {empZones.map(z => (
+                                <span key={z.id}
+                                  className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black bg-purple-100 text-purple-700 border border-purple-300"
+                                  title={z.name}>
+                                  {z.codigo_zona}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Estado */}
+                        <td className="px-6 py-5 text-center">
+                          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-100 text-emerald-700 border-2 border-emerald-300">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            Activo
+                          </span>
+                        </td>
+
+                        {/* Acciones */}
+                        <td className="px-6 py-5">
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => handleEditClick(emp)}
+                              className="p-3 text-gray-700 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all border-2 border-transparent hover:border-green-300 shadow-sm"
+                              title="Editar">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <div className="relative">
+                              <button onClick={() => handleOpenRouteModal(emp)}
+                                className="p-3 text-gray-700 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all border-2 border-transparent hover:border-purple-300 shadow-sm"
+                                title="Asignar Rutas">
+                                <Route className="w-4 h-4" />
+                              </button>
+                              {empZones.length > 0 && (
+                                <span className="absolute -top-1 -right-1 w-4 h-4 bg-purple-500 text-white text-[9px] font-black rounded-full flex items-center justify-center pointer-events-none">
+                                  {empZones.length}
+                                </span>
+                              )}
+                            </div>
+                            <button onClick={() => handleDeleteEmployee(emp)}
+                              className="p-3 text-gray-700 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border-2 border-transparent hover:border-red-300 shadow-sm"
+                              title="Desactivar">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-5 border-t-4 border-green-300 flex items-center justify-between">
+            <span className="text-sm text-gray-700 font-bold">
+              {filteredEmployees.length} de {totalEmployees} empleados
+            </span>
           </div>
         </div>
       </div>
-      </div>
+
+      {/* ── MODAL ASIGNACIÓN DE RUTAS ─────────────────────────────────────────── */}
+      {routeModalEmployee && (() => {
+        const filteredZonesForModal = zones.filter((z: Zone) =>
+          z.codigo_zona.toLowerCase().includes(zoneSearch.toLowerCase()) ||
+          z.name.toLowerCase().includes(zoneSearch.toLowerCase())
+        )
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+
+              {/* Header */}
+              <div className="bg-gradient-to-r from-purple-500 to-indigo-600 px-6 py-5 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white/20 rounded-2xl"><Route className="w-5 h-5 text-white" /></div>
+                  <div>
+                    <h2 className="text-lg font-black text-white">Asignar Rutas</h2>
+                    <p className="text-purple-100 text-xs font-medium">
+                      {routeModalEmployee.full_name} · {selectedZoneIds.size} ruta{selectedZoneIds.size !== 1 ? 's' : ''} seleccionada{selectedZoneIds.size !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setRouteModalEmployee(null)}
+                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-xl transition-all">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Barra de búsqueda + atajos */}
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3 flex-shrink-0 bg-gray-50">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="text" value={zoneSearch} onChange={e => setZoneSearch(e.target.value)}
+                    placeholder="Buscar ruta por código o nombre..."
+                    className="w-full pl-10 pr-4 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setSelectedZoneIds(new Set(zones.map(z => z.id)))}
+                    className="flex items-center gap-1 px-3 py-2 border-2 border-purple-200 text-purple-700 rounded-xl text-xs font-bold hover:bg-purple-50">
+                    <CheckSquare className="w-3.5 h-3.5" /> Todas
+                  </button>
+                  <button onClick={() => setSelectedZoneIds(new Set())}
+                    className="flex items-center gap-1 px-3 py-2 border-2 border-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-50">
+                    <Square className="w-3.5 h-3.5" /> Ninguna
+                  </button>
+                </div>
+              </div>
+
+              {/* Lista de zonas */}
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                {filteredZonesForModal.length === 0 ? (
+                  <p className="text-center text-gray-400 py-8 text-sm">No hay rutas que coincidan</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {filteredZonesForModal.map((zone: Zone) => {
+                      const isSelected = selectedZoneIds.has(zone.id)
+                      const assignedTo = zone.vendedor_id && zone.vendedor_id !== routeModalEmployee.id
+                        ? employees.find(e => e.id === zone.vendedor_id)?.full_name
+                        : null
+                      return (
+                        <button key={zone.id} onClick={() => toggleZone(zone.id)}
+                          className={`flex items-center gap-3 p-3 rounded-2xl border-2 text-left transition-all hover:scale-[1.01] ${
+                            isSelected ? 'border-purple-400 bg-purple-50' : 'border-gray-200 bg-white hover:border-purple-200'
+                          }`}>
+                          <div className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ${
+                            isSelected ? 'bg-purple-500 border-purple-500' : 'border-gray-300'
+                          }`}>
+                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-gray-800">{zone.codigo_zona}</span>
+                              {isSelected && (
+                                <span className="text-[9px] bg-purple-100 text-purple-700 font-black px-1.5 py-0.5 rounded-full">✓ Asignada</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 truncate">{zone.name}</p>
+                            {assignedTo && (
+                              <p className="text-[10px] text-amber-600 font-semibold mt-0.5">⚠ Asignada a {assignedTo}</p>
+                            )}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 flex-shrink-0 bg-gray-50">
+                <div className="text-sm text-gray-600">
+                  <span className="font-black text-purple-700">{selectedZoneIds.size}</span> ruta{selectedZoneIds.size !== 1 ? 's' : ''} de <span className="font-bold">{zones.length}</span> totales
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setRouteModalEmployee(null)}
+                    className="px-5 py-2.5 border-2 border-gray-200 text-gray-600 rounded-2xl font-bold text-sm hover:bg-gray-50">
+                    Cancelar
+                  </button>
+                  <button onClick={handleSaveRoutes} disabled={savingRoutes}
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-2xl font-black text-sm shadow-lg transition-all ${
+                      routeSaveSuccess
+                        ? 'bg-green-500 text-white'
+                        : 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:scale-105 disabled:opacity-50'
+                    }`}>
+                    {savingRoutes
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</>
+                      : routeSaveSuccess
+                        ? <><Check className="w-4 h-4" /> ¡Guardado!</>
+                        : <><Save className="w-4 h-4" /> Guardar Asignación</>}
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
