@@ -69,6 +69,9 @@ export default function ZonasEditorPage() {
   const [counterDisplay, setCounterDisplay] = useState(1)   // versión visible y editable del contador
   const [savingAll, setSavingAll] = useState(false)
 
+  // ── ZONA ASIGNADA EN TURBO (prefijo de ruta)
+  const [turboZonaId, setTurboZonaId] = useState<string>('')
+
   // ── MAPA FULLSCREEN
   const [mapFullscreen, setMapFullscreen] = useState(false)
 
@@ -85,6 +88,10 @@ export default function ZonasEditorPage() {
   const [savedPoints, setSavedPoints] = useState<SavedPoint[]>([])
   const [loadingSaved, setLoadingSaved] = useState(true)
 
+  // ── MOSTRAR LISTA GUARDADOS EN TAB CREAR
+  const [showSavedInCrear, setShowSavedInCrear] = useState(false)
+  const [filterCrearZonaId, setFilterCrearZonaId] = useState<string>('')
+
   // ── ZONAS (para asignar después)
   const [zonas, setZonas] = useState<Zona[]>([])
 
@@ -94,6 +101,7 @@ export default function ZonasEditorPage() {
   const [assigning, setAssigning] = useState(false)
   const [filterUnassigned, setFilterUnassigned] = useState(false)
   const [filterZonaId, setFilterZonaId] = useState<string>('')
+  const [filterPrefix, setFilterPrefix] = useState<string>('')   // búsqueda por prefijo
 
   // ── RENOMBRADO BATCH
   const [renamePrefix, setRenamePrefix] = useState('Punto')
@@ -148,8 +156,9 @@ export default function ZonasEditorPage() {
     }
   }
 
-  const savePoint = async (point: PendingPoint) => {
+  const savePoint = async (point: PendingPoint, zonaId?: string) => {
     try {
+      const resolvedZonaId = zonaId || turboZonaId || null
       const { data, error } = await supabase.from('route_points').insert({
         latitude: point.lat,
         longitude: point.lng,
@@ -157,7 +166,7 @@ export default function ZonasEditorPage() {
         color: point.color,
         vendor_id: null,
         client_id: null,
-        zona_id: null,
+        zona_id: resolvedZonaId || null,
       }).select('id, latitude, longitude, label, color, zona_id').single()
 
       if (error) throw error
@@ -169,8 +178,8 @@ export default function ZonasEditorPage() {
         )
       )
       if (data) {
-        // Agrega al estado local sin zona (zona_id=null, zonas=null)
-        setSavedPoints(prev => [{ ...data, zonas: null } as any, ...prev])
+        const zona = resolvedZonaId ? zonas.find(z => z.id === resolvedZonaId) || null : null
+        setSavedPoints(prev => [{ ...data, zonas: zona } as any, ...prev])
       }
     } catch (err: any) {
       setPendingPoints(prev =>
@@ -208,12 +217,12 @@ export default function ZonasEditorPage() {
     setSelectedPointIds(new Set(ids))
   }
 
-  const handleBatchAssign = async () => {
-    if (!assignToZonaId || selectedPointIds.size === 0) return
+  const handleBatchAssign = async (explicitIds?: string[]) => {
+    const ids = explicitIds ?? Array.from(selectedPointIds)
+    if (!assignToZonaId || ids.length === 0) return
     setAssigning(true)
 
     const zona = zonas.find(z => z.id === assignToZonaId)
-    const ids = Array.from(selectedPointIds)
 
     const { error } = await supabase
       .from('route_points')
@@ -228,7 +237,7 @@ export default function ZonasEditorPage() {
         )
       )
       setSelectedPointIds(new Set())
-      setAssignToZonaId('')
+      if (!explicitIds) setAssignToZonaId('')   // solo limpiar el selector en flujo normal
     }
     setAssigning(false)
   }
@@ -291,9 +300,21 @@ export default function ZonasEditorPage() {
   const unassignedCount = savedPoints.filter(p => !p.zona_id).length
 
   const filteredPoints = savedPoints.filter(p => {
+    // Filtro por prefijo (búsqueda de texto en label)
+    if (filterPrefix.trim()) {
+      if (!p.label.toLowerCase().includes(filterPrefix.trim().toLowerCase())) return false
+    }
     if (filterUnassigned) return !p.zona_id
+    if (filterZonaId === '__none__') return !p.zona_id
     if (filterZonaId) return p.zona_id === filterZonaId
     return true
+  })
+
+  // Puntos guardados filtrados para la pestaña Crear
+  const savedPointsForCrear = savedPoints.filter(p => {
+    if (!filterCrearZonaId) return true
+    if (filterCrearZonaId === '__none__') return !p.zona_id
+    return p.zona_id === filterCrearZonaId
   })
 
   const allMarkersForMap = [
@@ -304,7 +325,8 @@ export default function ZonasEditorPage() {
       color: p.saving ? '#94a3b8' : p.color,
       isPending: true, isSaving: p.saving, isSaved: p.saved,
     })),
-    ...savedPoints.map(p => ({
+    // Solo mostrar savedPoints que coincidan con el filtro de ruta del creador
+    ...savedPointsForCrear.map(p => ({
       id: p.id,
       latitude: p.latitude, longitude: p.longitude,
       label: p.label,
@@ -450,7 +472,33 @@ export default function ZonasEditorPage() {
                   Próximo: <span className="font-bold text-indigo-600">"{labelPrefix} {counterDisplay}"</span>
                   <span className="ml-2 text-gray-300">→ {labelPrefix} {counterDisplay + 1} → {labelPrefix} {counterDisplay + 2}...</span>
                 </p>
+              </div>
 
+              {/* Ruta en Turbo */}
+              <div className="bg-white rounded-3xl shadow-lg border-2 border-gray-200 p-5">
+                <h3 className="font-black text-gray-900 mb-3 flex items-center gap-2">
+                  <Route className="w-4 h-4 text-purple-500" />
+                  Ruta del Punto
+                </h3>
+                {zonas.length === 0 ? (
+                  <p className="text-xs text-amber-600 font-semibold">⏳ Sin rutas disponibles aún</p>
+                ) : (
+                  <select
+                    value={turboZonaId}
+                    onChange={e => setTurboZonaId(e.target.value)}
+                    className="w-full px-3 py-2.5 border-2 border-purple-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-purple-400 text-gray-700"
+                  >
+                    <option value="">— Sin ruta (asignar después) —</option>
+                    {zonas.map(z => (
+                      <option key={z.id} value={z.id}>{z.codigo_zona} — {z.descripcion}</option>
+                    ))}
+                  </select>
+                )}
+                {turboZonaId && (
+                  <p className="text-xs text-purple-600 font-bold mt-2">
+                    ✓ Cada punto se guardará en: <span className="bg-purple-100 px-1.5 py-0.5 rounded">{zonas.find(z => z.id === turboZonaId)?.codigo_zona}</span>
+                  </p>
+                )}
               </div>
 
               {/* Color */}
@@ -532,6 +580,61 @@ export default function ZonasEditorPage() {
                   </div>
                 </div>
               )}
+
+              {/* Puntos guardados (colapsable) con filtro de ruta */}
+              <div className="bg-white rounded-3xl shadow-lg border-2 border-gray-200 p-4">
+                <button
+                  onClick={() => setShowSavedInCrear(!showSavedInCrear)}
+                  className="flex items-center justify-between w-full mb-1"
+                >
+                  <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
+                    <MapPin className="w-3.5 h-3.5 text-indigo-500" />
+                    Puntos guardados ({savedPoints.length})
+                  </h3>
+                  <span className="text-gray-400 text-xs">{showSavedInCrear ? '▲ Ocultar' : '▼ Ver'}</span>
+                </button>
+
+                {showSavedInCrear && (
+                  <div className="mt-3">
+                    {/* Filtro ruta */}
+                    <select
+                      value={filterCrearZonaId}
+                      onChange={e => setFilterCrearZonaId(e.target.value)}
+                      className="w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-xs font-bold mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-300 text-gray-700"
+                    >
+                      <option value="">Todas las rutas</option>
+                      <option value="__none__">Sin ruta</option>
+                      {zonas.map(z => (
+                        <option key={z.id} value={z.id}>{z.codigo_zona} — {z.descripcion}</option>
+                      ))}
+                    </select>
+
+                    {loadingSaved ? (
+                      <div className="flex justify-center py-4">
+                        <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                      </div>
+                    ) : savedPointsForCrear.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-3">No hay puntos para mostrar</p>
+                    ) : (
+                      <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
+                        {savedPointsForCrear.map(p => (
+                          <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs bg-green-50 border border-green-100">
+                            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color || '#6366f1' }} />
+                            <span className="flex-1 font-semibold text-gray-700 truncate">{p.label}</span>
+                            {p.zona_id ? (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 flex-shrink-0">
+                                {getZonaName(p.zonas) || '?'}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 flex-shrink-0">Sin ruta</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* ─── MAPA ─── */}
@@ -543,14 +646,30 @@ export default function ZonasEditorPage() {
               {/* Barra del mapa */}
               <div className="bg-gradient-to-r from-indigo-50 to-purple-50 px-4 py-2.5 border-b-2 border-indigo-100 flex items-center justify-between flex-shrink-0 gap-3">
 
-                {/* Estado turbo + contador */}
-                <p className="font-bold text-gray-700 text-sm flex items-center gap-2 flex-shrink-0">
-                  <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${turboMode ? 'bg-green-500' : 'bg-amber-500'}`} />
-                  {turboMode ? '⚡ Turbo' : '🎯 Manual'}
-                  <span className="text-xs text-indigo-500 font-black bg-indigo-100 px-2 py-0.5 rounded-full">
-                    {allMarkersForMap.length} pts
-                  </span>
-                </p>
+                {/* Estado turbo + contador + filtro ruta */}
+                <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                  <p className="font-bold text-gray-700 text-sm flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${turboMode ? 'bg-green-500' : 'bg-amber-500'}`} />
+                    {turboMode ? '⚡ Turbo' : '🎯 Manual'}
+                    <span className="text-xs text-indigo-500 font-black bg-indigo-100 px-2 py-0.5 rounded-full">
+                      {allMarkersForMap.length} pts
+                    </span>
+                  </p>
+                  {/* Filtro rúta en mapa */}
+                  {zonas.length > 0 && (
+                    <select
+                      value={filterCrearZonaId}
+                      onChange={e => setFilterCrearZonaId(e.target.value)}
+                      className="px-2 py-1 border-2 border-purple-200 rounded-lg text-xs font-bold focus:outline-none focus:ring-2 focus:ring-purple-400 text-gray-700 bg-white max-w-[140px]"
+                    >
+                      <option value="">🗺️ Toda las rutas</option>
+                      <option value="__none__">Sin ruta</option>
+                      {zonas.map(z => (
+                        <option key={z.id} value={z.id}>{z.codigo_zona}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
 
                 {/* Controles flotantes en fullscreen */}
                 {mapFullscreen && (
@@ -610,6 +729,37 @@ export default function ZonasEditorPage() {
                         Guardar {unsavedCount}
                       </button>
                     )}
+
+                    {/* Selector de ruta en fullscreen */}
+                    {zonas.length > 0 && (
+                      <select
+                        value={turboZonaId}
+                        onChange={e => setTurboZonaId(e.target.value)}
+                        className="px-2 py-1 border-2 border-purple-200 rounded-lg text-xs font-bold focus:outline-none focus:ring-2 focus:ring-purple-400 text-gray-700 bg-white max-w-[120px]"
+                        title="Ruta del punto"
+                      >
+                        <option value="">— Sin ruta —</option>
+                        {zonas.map(z => (
+                          <option key={z.id} value={z.id}>{z.codigo_zona}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Filtro de mapa en fullscreen */}
+                    {zonas.length > 0 && (
+                      <select
+                        value={filterCrearZonaId}
+                        onChange={e => setFilterCrearZonaId(e.target.value)}
+                        className="px-2 py-1 border-2 border-indigo-200 rounded-lg text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-700 bg-white max-w-[110px]"
+                        title="Filtrar mapa por ruta"
+                      >
+                        <option value="">🗺️ Todas</option>
+                        <option value="__none__">Sin ruta</option>
+                        {zonas.map(z => (
+                          <option key={z.id} value={z.id}>{z.codigo_zona}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 )}
 
@@ -667,7 +817,7 @@ export default function ZonasEditorPage() {
                       ))}
                     </select>
                     <button
-                      onClick={handleBatchAssign}
+                      onClick={() => handleBatchAssign()}
                       disabled={!assignToZonaId || selectedPointIds.size === 0 || assigning}
                       className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-2xl font-bold text-sm transition-all shadow-lg disabled:opacity-40 hover:scale-105 disabled:hover:scale-100">
                       {assigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tags className="w-4 h-4" />}
@@ -687,6 +837,41 @@ export default function ZonasEditorPage() {
                   Filtrar Puntos
                 </h3>
                 <div className="flex flex-col gap-2">
+
+                  {/* Búsqueda por prefijo */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={filterPrefix}
+                      onChange={e => setFilterPrefix(e.target.value)}
+                      placeholder="Buscar por prefijo (ej: Punto, Stop, R1...)" 
+                      className="w-full px-4 py-2.5 border-2 border-indigo-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400 pr-10"
+                    />
+                    {filterPrefix && (
+                      <button
+                        onClick={() => setFilterPrefix('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-all"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Botón seleccionar todos los del prefijo */}
+                  {filterPrefix.trim() && (
+                    <div className="bg-indigo-50 border-2 border-indigo-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-indigo-700">
+                        {filteredPoints.length} punto{filteredPoints.length !== 1 ? 's' : ''} con "{filterPrefix.trim()}"
+                      </span>
+                      <button
+                        onClick={() => selectAll(filteredPoints.map(p => p.id))}
+                        className="text-xs font-black text-white bg-indigo-500 hover:bg-indigo-600 px-3 py-1 rounded-lg transition-all flex-shrink-0"
+                      >
+                        Seleccionar todos
+                      </button>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => { setFilterUnassigned(!filterUnassigned); setFilterZonaId('') }}
                     className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${
@@ -705,6 +890,19 @@ export default function ZonasEditorPage() {
                       <option key={z.id} value={z.id}>{z.codigo_zona} — {z.descripcion}</option>
                     ))}
                   </select>
+
+                  {/* Acción rápida: filtrar + asignar */}
+                  {filterPrefix.trim() && assignToZonaId && filteredPoints.length > 0 && (
+                    <button
+                      onClick={() => handleBatchAssign(filteredPoints.map(p => p.id))}
+                      disabled={assigning}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl font-bold text-sm transition-all shadow-lg disabled:opacity-40 hover:scale-105"
+                    >
+                      {assigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tags className="w-4 h-4" />}
+                      Asignar {filteredPoints.length} puntos "{filterPrefix.trim()}" a {zonas.find(z => z.id === assignToZonaId)?.codigo_zona}
+                    </button>
+                  )}
+
                 </div>
               </div>
 

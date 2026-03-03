@@ -157,20 +157,25 @@ const createPedidoIcon = (estado: string, empleadoInicial: string) => {
 }
 
 const createRoutePointIcon = (color: string, hasClient: boolean, label: string) => {
-  const borderColor = hasClient ? '#16a34a' : '#6366f1'
-  const bg = hasClient ? '#f0fdf4' : '#eef2ff'
+  const c = color || (hasClient ? '#16a34a' : '#6366f1')
+  // Punto pequeño estilo ZonasMap
   return L.divIcon({
     className: '',
-    html: `<div style="position:relative">
-      <div style="width:36px;height:36px;background:${bg};border-radius:8px;border:3px solid ${borderColor};box-shadow:0 3px 10px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;transform:rotate(45deg)">
-        <span style="transform:rotate(-45deg);font-size:12px">${hasClient ? '🏪' : '📍'}</span>
-      </div>
-      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${borderColor}"></div>
-      ${label ? `<div style="position:absolute;top:-22px;left:50%;transform:translateX(-50%);background:${borderColor};color:white;font-size:9px;font-weight:bold;padding:2px 5px;border-radius:4px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis">${label}</div>` : ''}
-    </div>`,
-    iconSize: [36, 44],
-    iconAnchor: [18, 44],
-    popupAnchor: [0, -46]
+    html: `
+      <div style="position:relative;width:14px;height:14px">
+        <div style="
+          width:14px;height:14px;border-radius:50%;
+          background:${c};
+          border:2.5px solid white;
+          box-shadow:0 2px 8px ${c}88, 0 0 0 1px ${c}44;
+          display:flex;align-items:center;justify-content:center;
+        ">
+          ${hasClient ? `<div style="width:5px;height:5px;border-radius:50%;background:white;opacity:0.9"></div>` : ''}
+        </div>
+      </div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -10],
   })
 }
 

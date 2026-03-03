@@ -74,6 +74,36 @@ export async function GET() {
       results.push({ tabla: 'productos', procesados: data.length, error: productErrors[0] || null });
     }
 
+    // --- STOCK REAL DESDE tbcd ---
+    if (pullData.stock?.length > 0) {
+      const stockMap = new Map<number, number>();
+      for (const s of pullData.stock) {
+        stockMap.set(s.idprd, Math.max(0, s.stock_actual || 0));
+      }
+
+      let stockActualizados = 0;
+      let stockErrores = 0;
+      const stockEntries = Array.from(stockMap.entries());
+
+      for (let i = 0; i < stockEntries.length; i += batchSize) {
+        const lote = stockEntries.slice(i, i + batchSize);
+        for (const [idprd, stock] of lote) {
+          const { error } = await supabase
+            .from('productos')
+            .update({ stock_actual: stock })
+            .eq('legacy_id', idprd);
+          if (error) stockErrores++;
+          else stockActualizados++;
+        }
+      }
+
+      results.push({
+        tabla: 'stock',
+        actualizados: stockActualizados,
+        errores: stockErrores
+      });
+    }
+
     // --- CLIENTES ---
     if (pullData.clients?.length > 0) {
       const { data: sbZones } = await supabase.from('zones').select('id, legacy_id');
