@@ -106,9 +106,17 @@ export async function GET() {
 
     // --- CLIENTES ---
     if (pullData.clients?.length > 0) {
+      //nuevo para encontrar buggs de perdida de daots
+      console.log(`📊 TOTAL CLIENTES DESDE SQL: ${pullData.clients.length}`);
+      //otro logs
+      const clientesSinId = pullData.clients.filter((c: any) => c.idcli == null);
+      if (clientesSinId.length > 0) {
+          console.log(`⚠️ ALERTA: Hay ${clientesSinId.length} clientes sin 'idcli' en el SQL. Estos se perderán.`);
+      }
+
+      //lo que ya teniamos
       const { data: sbZones } = await supabase.from('zones').select('id, legacy_id');
       const { data: sbEmps } = await supabase.from('employees').select('id, legacy_id');
-
       const data = pullData.clients.map((c: any) => ({
         legacy_id: c.idcli,
         code: (c.clicod || '').trim(),
@@ -123,6 +131,11 @@ export async function GET() {
       for (let i = 0; i < data.length; i += batchSize) {
         const { error } = await supabase.from('clients')
           .upsert(data.slice(i, i + batchSize), { onConflict: 'legacy_id' });
+        if (error) {
+          // 🟢 NUEVO: Si un lote choca con Supabase, que nos diga exactamente por qué
+          console.error(`🚨 ERROR SUPABASE en Clientes (lote ${i}):`, error.message);
+          clientErrors.push(`batch ${i}: ${error.message}`);
+        }
         if (error) clientErrors.push(`batch ${i}: ${error.message}`);
       }
       results.push({ tabla: 'clients', procesados: data.length, error: clientErrors[0] || null });
