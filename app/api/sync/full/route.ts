@@ -106,6 +106,15 @@ export async function GET() {
 
     // --- CLIENTES ---
     if (pullData.clients?.length > 0) {
+      // 🟢 NUEVO: Contamos cuántos clientes salen enteros desde el SQL Server local
+      console.log(`📊 TOTAL CLIENTES DESDE SQL: ${pullData.clients.length}`);
+
+      // 🟢 NUEVO: Revisamos si hay "fantasmas" (clientes sin ID) que se van a perder en el camino
+      const clientesSinId = pullData.clients.filter((c: any) => c.idcli == null);
+      if (clientesSinId.length > 0) {
+          console.log(`⚠️ ALERTA: Hay ${clientesSinId.length} clientes sin 'idcli' en el SQL. Estos se perderán.`);
+      }
+
       const { data: sbZones } = await supabase.from('zones').select('id, legacy_id');
       const { data: sbEmps } = await supabase.from('employees').select('id, legacy_id');
 
@@ -114,8 +123,8 @@ export async function GET() {
         code: (c.clicod || '').trim(),
         name: (c.clinom || '').trim(),
         address: (c.clidir || '').trim(),
-        zone_id: sbZones?.find(z => z.legacy_id == c.idz)?.id || null,
-        vendor_id: sbEmps?.find(e => e.legacy_id == c.cliidemp)?.id || null,
+        zone_id: sbZones?.find((z: any) => z.legacy_id == c.idz)?.id || null,
+        vendor_id: sbEmps?.find((e: any) => e.legacy_id == c.cliidemp)?.id || null,
         status: 'Vigente'
       }));
 
@@ -123,8 +132,15 @@ export async function GET() {
       for (let i = 0; i < data.length; i += batchSize) {
         const { error } = await supabase.from('clients')
           .upsert(data.slice(i, i + batchSize), { onConflict: 'legacy_id' });
-        if (error) clientErrors.push(`batch ${i}: ${error.message}`);
+        
+        if (error) {
+          // 🟢 NUEVO: Si un lote choca con Supabase, que nos diga exactamente por qué
+          console.error(`🚨 ERROR SUPABASE en Clientes (lote ${i}):`, error.message);
+          clientErrors.push(`batch ${i}: ${error.message}`);
+        }
       }
+      
+      //esto esta bien
       results.push({ tabla: 'clients', procesados: data.length, error: clientErrors[0] || null });
     }
 
