@@ -106,10 +106,8 @@ export async function GET() {
 
     // --- CLIENTES ---
     if (pullData.clients?.length > 0) {
-      // 🟢 NUEVO: Contamos cuántos clientes salen enteros desde el SQL Server local
       console.log(`📊 TOTAL CLIENTES DESDE SQL: ${pullData.clients.length}`);
 
-      // 🟢 NUEVO: Revisamos si hay "fantasmas" (clientes sin ID) que se van a perder en el camino
       const clientesSinId = pullData.clients.filter((c: any) => c.idcli == null);
       if (clientesSinId.length > 0) {
           console.log(`⚠️ ALERTA: Hay ${clientesSinId.length} clientes sin 'idcli' en el SQL. Estos se perderán.`);
@@ -134,13 +132,11 @@ export async function GET() {
           .upsert(data.slice(i, i + batchSize), { onConflict: 'legacy_id' });
         
         if (error) {
-          // 🟢 NUEVO: Si un lote choca con Supabase, que nos diga exactamente por qué
           console.error(`🚨 ERROR SUPABASE en Clientes (lote ${i}):`, error.message);
           clientErrors.push(`batch ${i}: ${error.message}`);
         }
       }
       
-      //esto esta bien
       results.push({ tabla: 'clients', procesados: data.length, error: clientErrors[0] || null });
     }
 
@@ -177,6 +173,85 @@ export async function GET() {
         }
       }
       results.push({ tabla: 'pedidos', procesados: pendingOrders.length, direccion: 'Supabase→SQL' });
+    }
+
+    // ========================================================================
+    // --- PULL HISTORIAL DE PEDIDOS (SQL Server → Supabase) ---
+    // ========================================================================
+    try {
+      // 1. Llamamos a nuestra nueva ruta en la oficina
+      const pullOrdersResp = await fetch(`${API_OFICINA}/api/pull-orders`);
+      
+      if (pullOrdersResp.ok) {
+        const ordersData = await pullOrdersResp.json();
+        
+        if (ordersData.success && ordersData.pedidos?.length > 0) {
+          // Necesitamos traer el catálogo de Supabase para relacionar los IDs viejos con los UUIDs nuevos
+          const { data: sbClients } = await supabase.from('clients').select('id, legacy_id');
+          const { data: sbProducts } = await supabase.from('productos').select('id, codigo_producto');
+
+          let pedidosActualizados = 0;
+          let pedidosErrores = 0;
+
+          // Recorremos las ventas que nos mandó la oficina
+          for (const pedido of ordersData.pedidos) {
+            // Buscamos el UUID real del cliente
+            const clienteSupabase = sbClients?.find((c: any) => c.legacy_id == pedido.legacy_cliente_id);
+
+            // 2. Insertamos la Cabecera de la venta en Supabase
+            const { data: cabeceraGuardada, error: cabeceraError } = await supabase
+              .from('pedidos')
+              .upsert({
+                legacy_id: pedido.legacy_id_venta,
+                numero_documento: pedido.numero_documento || `V-OLD-${pedido.legacy_id_venta}`,
+                clients_id: clienteSupabase ? clienteSupabase.id : null,
+                total_venta: pedido.total_venta,
+                estado: 'Completado' // Como vienen del historial de la ofi, ya están pagados/entregados
+              }, { onConflict: 'legacy_id' })
+              .select('id')
+              .single();
+
+            if (cabeceraError) {
+              console.error(`🚨 Error insertando pedido ${pedido.legacy_id_venta}:`, cabeceraError.message);
+              pedidosErrores++;
+              continue; // Saltamos a la siguiente venta
+            }
+
+            // 3. Insertamos el Detalle de los productos si la cabecera se guardó bien
+            if (cabeceraGuardada && pedido.detalle_pedido?.length > 0) {
+              const detallesParaGuardar = pedido.detalle_pedido.map((det: any) => {
+                // Buscamos el UUID real del producto guiándonos por su código (ej. PRD-001)
+                const productoSupabase = sbProducts?.find((p: any) => p.codigo_producto === det.codigo_producto);
+                
+                return {
+                  pedido_id: cabeceraGuardada.id,
+                  producto_id: productoSupabase ? productoSupabase.id : null,
+                  cantidad: det.cantidad,
+                  precio_unitario: det.precio_unitario
+                };
+              }).filter((det: any) => det.producto_id !== null); // Descartamos productos que no existan en el panel web
+
+              if (detallesParaGuardar.length > 0) {
+                // Limpiamos detalles viejos por si esta venta se está resincronizando (evita duplicados)
+                await supabase.from('detalle_pedido').delete().eq('pedido_id', cabeceraGuardada.id);
+                // Insertamos todos los detalles en bloque
+                await supabase.from('detalle_pedido').insert(detallesParaGuardar);
+              }
+            }
+            pedidosActualizados++;
+          }
+          
+          results.push({ 
+            tabla: 'historial_ventas', 
+            procesados: pedidosActualizados, 
+            errores: pedidosErrores,
+            direccion: 'SQL→Supabase'
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('💥 Error crítico al sincronizar historial de pedidos:', err.message);
+      results.push({ tabla: 'historial_ventas', error: err.message });
     }
 
     return NextResponse.json({ success: true, resultados: results });
