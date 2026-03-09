@@ -1,13 +1,26 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { createClient } from '@/utils/supabase/client'
 import MapLoader from '@/components/ui/Maploader'
-import {
-  RefreshCw, Map as MapIcon, Loader2, MapPin,
-  X, Plus, Route, Check, AlertCircle, ChevronDown, ChevronUp, Users, Search
-} from 'lucide-react'
 import { shareMyLocation } from '@/services/locationService'
+import { createClient } from '@/utils/supabase/client'
+import {
+    AlertCircle,
+    Check,
+    ChevronDown, ChevronUp,
+    Eye,
+    FileText,
+    Loader2,
+    Map as MapIcon,
+    MapPin,
+    Plus,
+    RefreshCw,
+    Route,
+    Search,
+    ShoppingBag,
+    Users,
+    X
+} from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 
 // ─── TIPOS ──────────────────────────────────────────────────────────────────
 type EmployeeLocation = {
@@ -50,8 +63,9 @@ function parseLocation(loc: any): { latitude: number | null; longitude: number |
   }
   if (typeof loc === 'object' && loc.type === 'Point' && Array.isArray(loc.coordinates))
     return { longitude: loc.coordinates[0], latitude: loc.coordinates[1] }
-  if (typeof loc === 'string' && loc.includes('POINT(')) {
-    const m = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/)
+  if (typeof loc === 'string') {
+    // ✅ Soporta ambos formatos: "POINT(...)" y "SRID=4326;POINT(...)"
+    const m = loc.match(/POINT\s*\(\s*([\-\d.]+)\s+([\-\d.]+)\s*\)/i)
     if (m) return { longitude: parseFloat(m[1]), latitude: parseFloat(m[2]) }
   }
   return { latitude: null, longitude: null }
@@ -107,6 +121,15 @@ export default function EmployeesMapPage() {
   const [showVisitModal, setShowVisitModal] = useState(false)
   const [visits, setVisits] = useState<any[]>([])
   const [showVisits, setShowVisits] = useState(true)
+
+  // ── Modal pedido
+  const [selectedPedido, setSelectedPedido] = useState<PedidoMarker | null>(null)
+  const [showPedidoModal, setShowPedidoModal] = useState(false)
+
+  // ── Listado de pedidos (panel colapsable)
+  const [showPedidoList, setShowPedidoList] = useState(false)
+  const PEDIDO_PAGE_SIZE = 20
+  const [pedidoPage, setPedidoPage] = useState(1)
 
   // ─── INIT: empleado actual ──────────────────────────────────────────────────
   useEffect(() => {
@@ -191,11 +214,13 @@ export default function EmployeesMapPage() {
         }
       } catch { /* silencioso */ }
 
-      // Visitas
+      // Visitas — usa check_in_location (al llegar) como posición principal
+      // Fallback a check_out_location para registros anteriores sin check_in
       try {
         let q = supabase.from('visits')
-          .select('*, clients:client_id (name, legacy_id), employees:seller_id (full_name)')
-          .not('check_out_location', 'is', null)
+          .select('*, clients:client_id (name, legacy_id), employees:seller_id (full_name), check_in_location, check_out_location')
+          .or('check_in_location.not.is.null,check_out_location.not.is.null')
+          .neq('outcome', 'pending')
           .order('start_time', { ascending: false }).limit(200)
         if (filterEmployee !== 'ALL') q = q.eq('seller_id', filterEmployee)
         const { data: vData } = await q
@@ -523,6 +548,7 @@ export default function EmployeesMapPage() {
               pedidos={showPedidos ? pedidos : []}
               routePoints={showRoutePoints && pointsLoaded ? routePoints : []}
               onVisitClick={(v) => { setSelectedVisit(v); setShowVisitModal(true) }}
+              onPedidoClick={(p: PedidoMarker) => { setSelectedPedido(p); setShowPedidoModal(true) }}
               creatingRoutePoint={creatingRoutePoint}
               onNewRoutePoint={handleNewRoutePoint}
               clients={clients}
@@ -636,7 +662,139 @@ export default function EmployeesMapPage() {
           </div>
         )}
 
+        {/* ── LISTA DE PEDIDOS (colapsable) ── */}
+        {pedidos.length > 0 && (
+          <div className="bg-white rounded-3xl shadow border-2 border-green-100 overflow-hidden">
+            <button
+              onClick={() => { setShowPedidoList(!showPedidoList); setPedidoPage(1) }}
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-green-50 transition-all"
+            >
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4 text-green-600" />
+                <span className="font-black text-gray-900 text-sm">Pedidos en el Mapa</span>
+                <span className="bg-green-100 text-green-700 text-xs font-black px-2 py-0.5 rounded-full">
+                  {pedidos.length} pedidos
+                </span>
+              </div>
+              {showPedidoList ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </button>
+            {showPedidoList && (() => {
+              const totalPedidoPages = Math.ceil(pedidos.length / PEDIDO_PAGE_SIZE)
+              const paged = pedidos.slice((pedidoPage - 1) * PEDIDO_PAGE_SIZE, pedidoPage * PEDIDO_PAGE_SIZE)
+              return (
+                <div className="px-5 pb-5">
+                  {/* Encabezado tabla */}
+                  <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-100 text-xs font-black text-gray-500 uppercase rounded-xl mb-2">
+                    <div className="col-span-2"># Doc</div>
+                    <div className="col-span-2">Fecha</div>
+                    <div className="col-span-3">Cliente</div>
+                    <div className="col-span-2">Vendedor</div>
+                    <div className="col-span-2 text-right">Total</div>
+                    <div className="col-span-1"></div>
+                  </div>
+                  <div className="space-y-1">
+                    {paged.map(p => (
+                      <div key={p.id}
+                        onClick={() => { setSelectedPedido(p); setShowPedidoModal(true) }}
+                        className="grid grid-cols-12 gap-2 px-3 py-2.5 bg-gray-50 hover:bg-green-50 rounded-xl border border-gray-200 cursor-pointer transition-all items-center text-sm">
+                        <div className="col-span-2 font-black text-gray-700 text-xs">#{p.numero_documento}</div>
+                        <div className="col-span-2 text-gray-500 text-xs">{p.fecha}</div>
+                        <div className="col-span-3 font-semibold text-gray-800 truncate text-xs">{p.cliente_nombre}</div>
+                        <div className="col-span-2 text-gray-500 truncate text-xs">{p.empleado_nombre}</div>
+                        <div className="col-span-2 font-black text-green-700 text-right text-xs">
+                          {new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(p.total_venta)}
+                        </div>
+                        <div className="col-span-1 flex justify-end">
+                          <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-green-600" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Paginación */}
+                  {totalPedidoPages > 1 && (
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                      <p className="text-xs text-gray-500">
+                        {(pedidoPage - 1) * PEDIDO_PAGE_SIZE + 1}–{Math.min(pedidoPage * PEDIDO_PAGE_SIZE, pedidos.length)} de {pedidos.length}
+                      </p>
+                      <div className="flex gap-1">
+                        <button onClick={() => setPedidoPage(p => Math.max(1, p - 1))} disabled={pedidoPage === 1}
+                          className="px-3 py-1 text-xs border rounded-lg font-bold disabled:opacity-40 hover:bg-gray-100 transition-all">
+                          ‹ Ant
+                        </button>
+                        <span className="px-3 py-1 text-xs bg-green-600 text-white rounded-lg font-black">{pedidoPage}/{totalPedidoPages}</span>
+                        <button onClick={() => setPedidoPage(p => Math.min(totalPedidoPages, p + 1))} disabled={pedidoPage === totalPedidoPages}
+                          className="px-3 py-1 text-xs border rounded-lg font-bold disabled:opacity-40 hover:bg-gray-100 transition-all">
+                          Sig ›
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+        )}
+
       </div>
+
+      {/* ── MODAL PEDIDO ── */}
+      {showPedidoModal && selectedPedido && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full">
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200 rounded-t-3xl flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-green-600" />
+                <h2 className="text-lg font-bold text-gray-900">Pedido #{selectedPedido.numero_documento}</h2>
+              </div>
+              <button onClick={() => setShowPedidoModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-all">
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 p-3 rounded-2xl col-span-2">
+                  <p className="text-xs text-gray-500 mb-0.5">Cliente</p>
+                  <p className="font-bold text-gray-900">{selectedPedido.cliente_nombre}</p>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-2xl">
+                  <p className="text-xs text-gray-500 mb-0.5">Vendedor</p>
+                  <p className="font-bold text-gray-900 text-sm">{selectedPedido.empleado_nombre}</p>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-2xl">
+                  <p className="text-xs text-gray-500 mb-0.5">Fecha</p>
+                  <p className="font-bold text-gray-900 text-sm">{selectedPedido.fecha}</p>
+                </div>
+                <div className="bg-green-50 border border-green-200 p-3 rounded-2xl">
+                  <p className="text-xs text-gray-500 mb-0.5">Total</p>
+                  <p className="font-black text-green-700 text-xl">
+                    {new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(selectedPedido.total_venta)}
+                  </p>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-2xl">
+                  <p className="text-xs text-gray-500 mb-0.5">Estado</p>
+                  <p className="font-bold text-sm">
+                    {selectedPedido.estado === 'Pendiente' ? '⏳ Pendiente'
+                      : selectedPedido.estado === 'Aprobado' ? '✅ Aprobado'
+                      : selectedPedido.estado === 'Entregado' ? '📦 Entregado'
+                      : selectedPedido.estado === 'Completado' ? '✔️ Completado'
+                      : '❌ ' + selectedPedido.estado}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 p-3 rounded-2xl text-xs text-blue-700">
+                <FileText className="w-4 h-4 flex-shrink-0" />
+                <span>Para ver el detalle completo de productos, ve a la pestaña <strong>Pedidos</strong> y busca #{selectedPedido.numero_documento}</span>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowPedidoModal(false)}
+                  className="px-5 py-2.5 bg-green-600 text-white rounded-2xl font-bold text-sm hover:bg-green-700 transition-all">
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL VISITA ── */}
       {showVisitModal && selectedVisit && (
@@ -668,6 +826,12 @@ export default function EmployeesMapPage() {
                   <p className="text-xs text-gray-500 mb-0.5">Fecha</p>
                   <p className="font-bold text-gray-900 text-sm">{selectedVisit.start_time ? new Date(selectedVisit.start_time).toLocaleString('es-BO') : 'N/A'}</p>
                 </div>
+                {selectedVisit.notes && (
+                  <div className="bg-gray-50 p-3 rounded-2xl col-span-2">
+                    <p className="text-xs text-gray-500 mb-0.5">Notas</p>
+                    <p className="text-sm text-gray-800">{selectedVisit.notes}</p>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end">
                 <button onClick={() => setShowVisitModal(false)} className="px-5 py-2.5 bg-green-600 text-white rounded-2xl font-bold text-sm hover:bg-green-700">

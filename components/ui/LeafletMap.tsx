@@ -1,9 +1,9 @@
 'use client'
 
-import { memo, useEffect, useRef, useMemo, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet'
-import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import { memo, useEffect, useMemo, useRef } from 'react'
+import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 
 // ─── TIPOS ──────────────────────────────────────────────────────────────────
 type EmployeeLocation = {
@@ -63,8 +63,9 @@ function parseLocation(loc: any): { latitude: number; longitude: number } | null
     return parseWKBHex(loc)
   if (typeof loc === 'object' && loc.type === 'Point' && Array.isArray(loc.coordinates))
     return { longitude: loc.coordinates[0], latitude: loc.coordinates[1] }
-  if (typeof loc === 'string' && loc.includes('POINT(')) {
-    const m = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/)
+  if (typeof loc === 'string') {
+    // ✅ Soporta: "POINT(...)", "SRID=4326;POINT(...)"
+    const m = loc.match(/POINT\s*\(\s*([\-\d.]+)\s+([\-\d.]+)\s*\)/i)
     if (m) return { longitude: parseFloat(m[1]), latitude: parseFloat(m[2]) }
   }
   return null
@@ -115,16 +116,18 @@ const createEmployeeIcon = (fullName: string, score: number, isActive: boolean) 
 }
 
 const createVisitIcon = (outcome: string) => {
+  // ✅ El móvil usa 'closed', registros antiguos pueden tener 'store_closed'
+  const normalizedOutcome = outcome === 'closed' ? 'store_closed' : outcome
   const colors: Record<string, [string, string]> = {
-    sale: ['#16a34a', '#bbf7d0'],
-    no_sale: ['#d97706', '#fef9c3'],
+    sale:         ['#16a34a', '#bbf7d0'],
+    no_sale:      ['#d97706', '#fef9c3'],
     store_closed: ['#dc2626', '#fee2e2'],
   }
-  const [border, bg] = colors[outcome] || ['#6b7280', '#f3f4f6']
+  const [border, bg] = colors[normalizedOutcome] || ['#6b7280', '#f3f4f6']
   const symbols: Record<string, string> = {
     sale: '💰', no_sale: '✗', store_closed: '🔒'
   }
-  const sym = symbols[outcome] || '?'
+  const sym = symbols[normalizedOutcome] || '?'
   return L.divIcon({
     className: '',
     html: `<div style="position:relative">
@@ -187,6 +190,7 @@ function LeafletMap({
   pedidos = [],
   routePoints = [],
   onVisitClick,
+  onPedidoClick,
   onRoutePointClick,
   creatingRoutePoint = false,
   onNewRoutePoint,
@@ -199,6 +203,7 @@ function LeafletMap({
   pedidos?: PedidoMarker[]
   routePoints?: RoutePoint[]
   onVisitClick?: (visit: any) => void
+  onPedidoClick?: (pedido: PedidoMarker) => void
   onRoutePointClick?: (point: RoutePoint) => void
   creatingRoutePoint?: boolean
   onNewRoutePoint?: (lat: number, lng: number) => void
@@ -217,15 +222,22 @@ function LeafletMap({
     }
   }, [selectedEmployeeId])
 
-  // Procesar visitas
+  // Procesar visitas: usar check_in_location (al llegar) o check_out_location como fallback
   const processedVisits = useMemo(() =>
-    visits.map(v => ({ ...v, ...parseLocation(v.check_out_location) }))
-      .filter(v => v.latitude && v.longitude && !isNaN(v.latitude) && !isNaN(v.longitude)),
+    visits.map(v => {
+      // check_in_location = dónde estaba el vendedor al LLEGAR al cliente
+      const loc = parseLocation(v.check_in_location) || parseLocation(v.check_out_location)
+      if (!loc) return null
+      return { ...v, latitude: loc.latitude, longitude: loc.longitude }
+    }).filter((v): v is NonNullable<typeof v> => !!v && !isNaN(v.latitude) && !isNaN(v.longitude)),
     [visits]
   )
 
-  const getOutcomeLabel = (o: string) =>
-    ({ sale: '💰 Venta Exitosa', no_sale: '✗ Sin Venta', store_closed: '🔒 Tienda Cerrada' })[o] || o
+  const getOutcomeLabel = (o: string) => {
+    // ✅ compatible con outcome 'closed' (móvil) y 'store_closed' (legado)
+    const normalized = o === 'closed' ? 'store_closed' : o
+    return ({ sale: '💰 Venta Exitosa', no_sale: '✗ Sin Venta', store_closed: '🔒 Tienda Cerrada' })[normalized] || o
+  }
 
   return (
     <div style={{ position: 'relative' }}>
@@ -329,6 +341,13 @@ function LeafletMap({
                     <div>Total: <b style={{ color: '#1d4ed8' }}>Bs. {p.total_venta.toFixed(2)}</b></div>
                     <div>Estado: <span style={{ fontWeight: 700 }}>{p.estado}</span></div>
                   </div>
+                  {onPedidoClick && (
+                    <button
+                      onClick={() => onPedidoClick(p)}
+                      style={{ marginTop: 8, width: '100%', padding: '6px 0', background: '#16a34a', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                      Ver Detalle
+                    </button>
+                  )}
                 </div>
               </Popup>
             </Marker>

@@ -1,185 +1,163 @@
 import { NextResponse } from 'next/server';
-import { getSqlConnection } from '@/utils/mssql';
-import sql from 'mssql';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * Función auxiliar para limpiar textos y evitar nulos
- */
 const cleanString = (val: any) => val ? String(val).trim() : '';
-
-/**
- * Función auxiliar para asegurar números enteros
- */
-const cleanInt = (val: any) => {
-  const num = parseInt(val);
-  return isNaN(num) ? 0 : num;
-};
-
-/**
- * Función auxiliar para asegurar decimales (moneda)
- */
-const cleanFloat = (val: any) => {
-  const num = parseFloat(val);
-  return isNaN(num) ? 0.00 : num;
-};
+const cleanInt    = (val: any) => { const n = parseInt(val); return isNaN(n) ? 0 : n; };
+const cleanFloat  = (val: any) => { const n = parseFloat(val); return isNaN(n) ? 0.00 : n; };
 
 export async function POST(req: Request) {
   try {
-    const { entity, data } = await req.json();
-    const pool = await getSqlConnection();
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
-    // Log para depuración en consola del servidor
-    console.log(`Recibiendo entidad: ${entity}`);
+    const API_OFICINA = process.env.NEXT_PUBLIC_API_OFICINA || 'https://db-sql.tiendasmovil.com';
+    const { entity, data } = await req.json();
+
+    console.log(`[sync-master] Recibiendo entidad: ${entity}`, data);
 
     switch (entity) {
-      
-      // --- SINCRONIZACIÓN DE PEDIDOS (La más crítica) ---
-      case 'ORDER': 
-        const transaction = new sql.Transaction(pool);
-        await transaction.begin();
 
-        try {
-          // 1. Validar datos críticos antes de intentar insertar
-          const clienteId = cleanInt(data.cliente_legacy_id);
-          const totalVenta = cleanFloat(data.total_venta);
+      // ================================================================
+      // PEDIDOS: Guardamos en Supabase primero.
+      // La Mini-API de la oficina lo recoge via WebSocket automáticamente.
+      // ================================================================
+      case 'ORDER': {
+        const clienteId = cleanInt(data.cliente_legacy_id);
+        const totalVenta = cleanFloat(data.total_venta);
 
-          if (clienteId === 0) {
-            throw new Error('El ID del cliente es 0 o inválido. No se puede sincronizar.');
-          }
+        if (clienteId === 0) {
+          throw new Error('El ID del cliente es 0 o inválido.');
+        }
 
-          // 2. Insertar Cabecera (TBVEN)
-          const resVen = await new sql.Request(transaction)
-            .input('idcli', sql.Int, clienteId)
-            // Usamos un ID de vendedor genérico para la web (ej: 30) o lo mandamos desde la data
-            .input('idemp', sql.Int, 30) 
-            .input('vdoc', sql.VarChar, 'WEB-SYNC') 
-            .query(`
-              INSERT INTO tbven (vtipo, vtipa, idcli, idemp, vdoc, vfec, vtc, vidzona, venest, usumod, fecmod) 
-              VALUES ('VD', 0, @idcli, @idemp, @vdoc, GETDATE(), 6.96, 10, 0, 'NEXTJS_API', GETDATE());
-              
-              SELECT SCOPE_IDENTITY() AS idven;
-            `);
+        // 1. Buscar el UUID del cliente en Supabase usando su legacy_id
+        const { data: cliente, error: cliErr } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('legacy_id', clienteId)
+          .single();
 
-          const idven = resVen.recordset[0].idven; // Obtenemos el ID generado por SQL
+        if (cliErr || !cliente) {
+          throw new Error(`Cliente con legacy_id ${clienteId} no encontrado en Supabase.`);
+        }
 
-          // 3. Insertar Facturación (TBFVEN)
-          await new sql.Request(transaction)
-            .input('id', sql.Int, idven)
-            .input('total', sql.Decimal(10, 2), totalVenta) // Decimal es más preciso para dinero
-            .input('idcli', sql.Int, clienteId)
-            .query(`
-              INSERT INTO tbfven (id, fecha, totalfac, idcli, totalice, esp) 
-              VALUES (@id, GETDATE(), @total, @idcli, 0, 0)
-            `);
+        // 2. Guardar cabecera del pedido en Supabase (legacy_id = null = pendiente)
+        const numeroDoc = `WEB-${Date.now()}`;
+        const { data: pedidoGuardado, error: pedErr } = await supabase
+          .from('pedidos')
+          .insert({
+            numero_documento: numeroDoc,
+            tipo_documento:   'VD',
+            fecha_pedido:      new Date().toISOString().split('T')[0],
+            clients_id:        cliente.id,
+            empleado_id:       null,   // Sin vendedor asignado desde web
+            total_venta:       totalVenta,
+            estado:            'Pendiente',
+            legacy_id:         null    // null = todavía no llegó a SQL Server
+          })
+          .select('id')
+          .single();
 
-          // 4. Insertar Detalles (TBIVVEN)
-          // Recorremos el array de items que viene de la web
-          if (data.items && Array.isArray(data.items)) {
-            for (const item of data.items) {
-              
-              // Buscamos el ID interno del producto usando su SKU
-              const productoSKU = cleanString(item.codigo_producto);
-              
-              const prodQuery = await new sql.Request(transaction)
-                .input('cod', sql.VarChar, productoSKU)
-                .query('SELECT idprd FROM tbprd WHERE prdcod = @cod');
-              
-              if(prodQuery.recordset.length > 0) {
-                 const idPrdReal = prodQuery.recordset[0].idprd;
-                 const cantidad = cleanFloat(item.cantidad);
-                 const precio = cleanFloat(item.precio);
+        if (pedErr || !pedidoGuardado) {
+          throw new Error(`Error guardando pedido: ${pedErr?.message}`);
+        }
 
-                 await new sql.Request(transaction)
-                  .input('idac', sql.Int, idven)
-                  .input('idprd', sql.Int, idPrdReal)
-                  .input('can', sql.Decimal(10, 2), cantidad)
-                  .input('pre', sql.Decimal(10, 2), precio)
-                  .query(`
-                      INSERT INTO tbivven (idac, idprd, spcan, sppre, idaj, idal) 
-                      VALUES (@idac, @idprd, @can, @pre, 0, 1)
-                  `);
-              } else {
-                console.warn(`Producto con SKU ${productoSKU} no encontrado en SQL Server`);
-              }
+        // 3. Guardar detalles del pedido en Supabase
+        if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+          const detalles = [];
+
+          for (const item of data.items) {
+            const codigoPrd = cleanString(item.codigo_producto);
+            const { data: producto } = await supabase
+              .from('productos')
+              .select('id')
+              .eq('codigo_producto', codigoPrd)
+              .single();
+
+            if (producto) {
+              detalles.push({
+                pedido_id:         pedidoGuardado.id,
+                producto_id:       producto.id,
+                cantidad:          cleanFloat(item.cantidad),
+                precio_unitario:   cleanFloat(item.precio),
+                subtotal:          parseFloat((cleanFloat(item.cantidad) * cleanFloat(item.precio)).toFixed(2)),
+                unidad_seleccionada: cleanString(item.unidad) || 'UND',
+              });
+            } else {
+              console.warn(`[sync-master] Producto SKU "${codigoPrd}" no encontrado en Supabase`);
             }
           }
 
-          // Si todo funcionó, guardamos los cambios
-          await transaction.commit();
-          
-        } catch (err) {
-          // Si algo falló, deshacemos todo
-          await transaction.rollback();
-          throw err;
+          if (detalles.length > 0) {
+            const { error: detErr } = await supabase.from('detalle_pedido').insert(detalles);
+            if (detErr) throw new Error(`Error guardando detalles: ${detErr.message}`);
+          }
         }
-        break;
 
-      // --- SINCRONIZACIÓN DE CLIENTES ---
-      case 'CLIENT':
-        await pool.request()
-          .input('cod', sql.VarChar, cleanString(data.code))
-          .input('nom', sql.VarChar, cleanString(data.name))
-          .input('nit', sql.VarChar, cleanString(data.tax_id) || '0')
-          .input('dir', sql.VarChar, cleanString(data.address))
-          .input('lim', sql.Decimal(10, 2), cleanFloat(data.credit_limit))
-          .query(`
-            IF EXISTS (SELECT 1 FROM tbcli WHERE clicod = @cod)
-            BEGIN
-              UPDATE tbcli SET clinom=@nom, clinit=@nit, clidir=@dir, clitlimcre=@lim 
-              WHERE clicod=@cod
-            END
-            ELSE
-            BEGIN
-              INSERT INTO tbcli (clicod, clinom, clinit, clidir, clitlimcre, idconf, idclit, idclir) 
-              VALUES (@cod, @nom, @nit, @dir, @lim, 1, 1, 1)
-            END
-          `);
-        break;
+        // 4. El WebSocket de la Mini-API de la oficina lo detectará automáticamente
+        //    y lo escribirá en SQL Server. No necesitamos llamar a nada más.
+        console.log(`[sync-master] ✅ Pedido ${pedidoGuardado.id} guardado en Supabase. WebSocket lo enviará a SQL Server.`);
 
-      // --- SINCRONIZACIÓN DE PRODUCTOS ---
+        return NextResponse.json({
+          success: true,
+          pedido_id: pedidoGuardado.id,
+          numero_documento: numeroDoc,
+          message: 'Pedido guardado. Será sincronizado con la oficina automáticamente.'
+        });
+      }
+
+      // ================================================================
+      // CLIENTES: Delegamos a la Mini-API de la oficina
+      // ================================================================
+      case 'CLIENT': {
+        const resp = await fetch(`${API_OFICINA}/api/push-client`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client: data }),
+          cache: 'no-store'
+        });
+
+        if (!resp.ok) {
+          const errBody = await resp.text();
+          throw new Error(`Mini-API no pudo guardar cliente: ${errBody}`);
+        }
+
+        return NextResponse.json({ success: true });
+      }
+
+      // ================================================================
+      // PRODUCTOS y CATEGORÍAS: Delegamos a la Mini-API de la oficina
+      // ================================================================
       case 'PRODUCT':
-        await pool.request()
-          .input('cod', sql.VarChar, cleanString(data.codigo_producto))
-          .input('nom', sql.VarChar, cleanString(data.nombre_producto))
-          .input('pre', sql.Decimal(10, 2), cleanFloat(data.precio_base_venta))
-          .input('stk', sql.Decimal(10, 2), cleanFloat(data.stock_actual))
-          .input('min', sql.Decimal(10, 2), cleanFloat(data.stock_min))
-          .input('max', sql.Decimal(10, 2), cleanFloat(data.stock_max))
-          .query(`
-            IF EXISTS (SELECT 1 FROM tbprd WHERE prdcod = @cod)
-              UPDATE tbprd SET prdnom=@nom, prdpoficial=@pre, prdstmax=@stk, prdstmin=@min WHERE prdcod=@cod
-            ELSE
-              INSERT INTO tbprd (prdcod, prdnom, prdpoficial, prdstmax, prdstmin, prdunid, prdest) 
-              VALUES (@cod, @nom, @pre, @stk, @min, 'UND', 0)
-          `);
-        break;
-      
-      // --- SINCRONIZACIÓN DE CATEGORÍAS ---
-      case 'CATEGORY':
-        await pool.request()
-          .input('nom', sql.VarChar, cleanString(data.nombre_categoria))
-          .query(`
-            IF EXISTS (SELECT 1 FROM tbprdlin WHERE linnom = @nom)
-              UPDATE tbprdlin SET linfecmod = GETDATE() WHERE linnom = @nom
-            ELSE
-              INSERT INTO tbprdlin (linnom, linniv, lincod, idctaing, idctacos, linfecmod)
-              VALUES (@nom, 2, UPPER(LEFT(@nom, 3)), 0, 0, GETDATE())
-          `);
-        break;
+      case 'CATEGORY': {
+        const endpoint = entity === 'PRODUCT' ? '/api/push-product' : '/api/push-category';
+        const resp = await fetch(`${API_OFICINA}${endpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data }),
+          cache: 'no-store'
+        });
+
+        if (!resp.ok) {
+          const errBody = await resp.text();
+          throw new Error(`Mini-API no pudo guardar ${entity}: ${errBody}`);
+        }
+
+        return NextResponse.json({ success: true });
+      }
 
       default:
         return NextResponse.json({ error: 'Entidad no soportada' }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true });
-
   } catch (error: any) {
-    console.error('Error FATAL en Sync Master:', error);
-    return NextResponse.json({ 
-      error: error.message, 
-      details: 'Revisar tipos de datos o conexión SQL' 
-    }, { status: 500 });
+    console.error('[sync-master] Error FATAL:', error.message);
+    return NextResponse.json(
+      { error: error.message, details: 'Revisar datos enviados o conexión con la oficina' },
+      { status: 500 }
+    );
   }
 }

@@ -1,14 +1,35 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
-import {
-  Search, ShoppingCart, Calendar, User, CheckCircle2, XCircle, Clock,
-  DollarSign, Plus, Trash2, Save, Loader2, AlertTriangle, Edit, X,
-  ChevronDown, ChevronUp, Package, RefreshCw
-} from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import {
+    AlertCircle,
+    AlertTriangle,
+    Calendar,
+    CheckCircle2,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    ChevronUp,
+    Clock,
+    DollarSign,
+    Edit,
+    Filter,
+    Info,
+    Loader2,
+    Package,
+    Plus,
+    RefreshCw,
+    Save,
+    Search, ShoppingCart,
+    Tag,
+    Trash2,
+    User,
+    X,
+    XCircle
+} from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import EmployeesTab from './components/EmployeesTab'
 import ReportsTab from './components/ReportsTab'
 
@@ -20,6 +41,13 @@ type Product = {
   precio_base_venta: number
   unidad_base_venta: string
   stock_actual: number
+}
+
+type Employee = {
+  id: string
+  full_name: string
+  legacy_id: string | null
+  email?: string | null
 }
 
 type Client = {
@@ -103,13 +131,15 @@ function ClientSearch({
     }
   }, [selectedId, clients])
 
-  const filtered = useMemo(() =>
-    query.length < 1 ? clients.slice(0, 50) : clients.filter(c =>
-      c.name.toLowerCase().includes(query.toLowerCase()) ||
-      (c.legacy_id || '').toString().includes(query) ||
-      (c.code || '').toLowerCase().includes(query.toLowerCase())
-    ).slice(0, 50)
-  , [clients, query])
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim()
+    if (q.length < 1) return clients.slice(0, 60)
+    return clients.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.legacy_id || '').toString().includes(q) ||
+      (c.code || '').toLowerCase().includes(q)
+    ).slice(0, 100)
+  }, [clients, query])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -139,21 +169,34 @@ function ClientSearch({
         />
       </div>
       {open && (
-        <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
+          {/* Encabezado con contador */}
+          <div className="sticky top-0 px-3 py-1.5 bg-gray-50 border-b border-gray-100 text-xs text-gray-400 font-semibold">
+            {query.trim()
+              ? `${filtered.length} resultado${filtered.length !== 1 ? 's' : ''} para "${query.trim()}"`
+              : `${filtered.length} de ${clients.length} clientes`}
+          </div>
           {filtered.length === 0 ? (
             <p className="text-center text-gray-400 py-6 text-sm">No se encontraron clientes</p>
           ) : (
             filtered.map(c => (
               <button key={c.id} type="button"
                 onClick={() => handleSelect(c)}
-                className="w-full text-left px-4 py-3 hover:bg-green-50 border-b border-gray-100 last:border-0 transition-colors">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-bold text-gray-800">{c.name}</p>
-                  {c.legacy_id && (
-                    <span className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                      #{c.legacy_id}
-                    </span>
-                  )}
+                className="w-full text-left px-4 py-2.5 hover:bg-green-50 border-b border-gray-100 last:border-0 transition-colors">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-gray-800 flex-1 truncate">{c.name}</p>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {c.code && (
+                      <span className="text-xs font-mono bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded">
+                        {c.code}
+                      </span>
+                    )}
+                    {c.legacy_id && (
+                      <span className="text-xs font-mono bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+                        #{c.legacy_id}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </button>
             ))
@@ -248,6 +291,106 @@ function ProductSearch({
   )
 }
 
+// ─── Buscador de empleado con autocomplete ──────────────────────────────────
+function EmployeeSearch({
+  employees,
+  onSelect,
+  selectedId,
+}: {
+  employees: Employee[]
+  onSelect: (e: Employee | null) => void
+  selectedId: string
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!selectedId) setQuery('')
+    else {
+      const found = employees.find(e => e.id === selectedId)
+      if (found) setQuery(found.full_name)
+    }
+  }, [selectedId, employees])
+
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim()
+    if (q.length < 1) return employees.slice(0, 50)
+    return employees.filter(e =>
+      e.full_name.toLowerCase().includes(q) ||
+      (e.legacy_id || '').toString().includes(q)
+    ).slice(0, 50)
+  }, [employees, query])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const handleSelect = (e: Employee) => {
+    setQuery(e.full_name)
+    setOpen(false)
+    onSelect(e)
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="relative">
+        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          value={query}
+          onChange={ev => { setQuery(ev.target.value); setOpen(true); onSelect(null) }}
+          onFocus={() => setOpen(true)}
+          placeholder="Buscar vendedor por nombre..."
+          className="w-full pl-9 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-400 text-sm text-gray-900 bg-white"
+        />
+        {selectedId && (
+          <button type="button" onClick={() => { setQuery(''); onSelect(null) }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+          <div className="sticky top-0 px-3 py-1.5 bg-gray-50 border-b border-gray-100 text-xs text-gray-400 font-semibold">
+            {query.trim()
+              ? `${filtered.length} resultado${filtered.length !== 1 ? 's' : ''}`
+              : `${employees.length} vendedor${employees.length !== 1 ? 'es' : ''}`}
+          </div>
+          {/* Opción para dejar sin vendedor */}
+          <button type="button" onClick={() => { setQuery(''); setOpen(false); onSelect(null) }}
+            className="w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-100 text-sm text-gray-400 italic">
+            — Sin vendedor asignado
+          </button>
+          {filtered.length === 0 ? (
+            <p className="text-center text-gray-400 py-4 text-sm">No se encontraron vendedores</p>
+          ) : (
+            filtered.map(e => (
+              <button key={e.id} type="button"
+                onClick={() => handleSelect(e)}
+                className="w-full text-left px-4 py-2.5 hover:bg-green-50 border-b border-gray-100 last:border-0 transition-colors">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-gray-800 flex-1 truncate">{e.full_name}</p>
+                  {e.legacy_id && (
+                    <span className="text-xs font-mono bg-gray-100 text-gray-500 px-2 py-0.5 rounded flex-shrink-0">
+                      #{e.legacy_id}
+                    </span>
+                  )}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 export default function OrdersPage() {
   const supabase = createClient()
@@ -258,14 +401,27 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
   const [orderDetails, setOrderDetails] = useState<Record<string, OrderDetail[]>>({})
   const [loadingDetails, setLoadingDetails] = useState(false)
 
+  // Filtros avanzados
+  const [filterEstado, setFilterEstado] = useState('')
+  const [filterTipoPago, setFilterTipoPago] = useState('')
+  const [filterEmpleado, setFilterEmpleado] = useState('')
+  const [filterFechaDesde, setFilterFechaDesde] = useState('')
+  const [filterFechaHasta, setFilterFechaHasta] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+
+  // Paginación
+  const PAGE_SIZE = 20
+  const [currentPage, setCurrentPage] = useState(1)
+
   // Formulario
-  const [formData, setFormData] = useState({ client_id: '', tipo_pago: 'Contado', observacion: '', estado: 'Pendiente' })
+  const [formData, setFormData] = useState({ client_id: '', empleado_id: '', tipo_pago: 'Contado', observacion: '', estado: 'Pendiente' })
   const [orderProducts, setOrderProducts] = useState<OrderProduct[]>([])
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [productQuantity, setProductQuantity] = useState('1')
@@ -283,24 +439,47 @@ export default function OrdersPage() {
   const [editSuccess, setEditSuccess] = useState(false)
 
   // ── Carga inicial ─────────────────────────────────────────────────────────
+  // Carga TODOS los clientes sin límite usando paginación por rangos
+  const fetchAllClients = async (): Promise<Client[]> => {
+    const PAGE = 1000
+    let from = 0
+    let allClients: Client[] = []
+    while (true) {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name, legacy_id, code')
+        .order('name')
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      allClients = [...allClients, ...data]
+      if (data.length < PAGE) break   // última página
+      from += PAGE
+    }
+    return allClients
+  }
+
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [ordersRes, clientsRes, productsRes] = await Promise.all([
+      const [ordersRes, allClients, productsRes, employeesRes] = await Promise.all([
         supabase.from('pedidos')
           .select('*, clients:clients_id (name, legacy_id), employees:empleado_id (full_name)')
           .order('fecha_pedido', { ascending: false }),
-        supabase.from('clients').select('id, name, legacy_id, code').order('name'),
+        fetchAllClients(),
         supabase.from('productos')
           .select('id, codigo_producto, nombre_producto, precio_base_venta, unidad_base_venta, stock_actual')
           .or('activo.eq.true,estado.eq.Activo')
           .order('nombre_producto'),
+        supabase.from('employees')
+          .select('id, full_name, legacy_id, email')
+          .eq('status', 'Habilitado')
+          .order('full_name'),
       ])
       if (ordersRes.error) throw ordersRes.error
-      if (clientsRes.error) throw clientsRes.error
       if (ordersRes.data) setOrders(ordersRes.data as any)
-      if (clientsRes.data) setClients(clientsRes.data)
+      if (allClients.length > 0) setClients(allClients)
       if (productsRes.data) setProducts(productsRes.data as any)
+      if (employeesRes.data) setEmployees(employeesRes.data as any)
     } catch (err: any) {
       console.error('Error cargando datos:', err)
     } finally {
@@ -335,13 +514,50 @@ export default function OrdersPage() {
   }
 
   // ── KPIs y filtros ────────────────────────────────────────────────────────
-  const filteredOrders = useMemo(() =>
-    orders.filter(o =>
-      o.clients?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.numero_documento.toString().includes(searchTerm) ||
-      o.employees?.full_name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  , [orders, searchTerm])
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      const term = searchTerm.toLowerCase()
+      const matchSearch = !searchTerm ||
+        (o.clients?.name || '').toLowerCase().includes(term) ||
+        o.numero_documento.toString().includes(term) ||
+        (o.employees?.full_name || '').toLowerCase().includes(term)
+      const matchEstado = !filterEstado || o.estado === filterEstado
+      const matchPago = !filterTipoPago || o.tipo_pago === filterTipoPago
+      const matchEmp = !filterEmpleado || (o.employees?.full_name || '').toLowerCase().includes(filterEmpleado.toLowerCase())
+      const fecha = new Date(o.fecha_pedido)
+      const matchDesde = !filterFechaDesde || fecha >= new Date(filterFechaDesde)
+      const matchHasta = !filterFechaHasta || fecha <= new Date(filterFechaHasta + 'T23:59:59')
+      return matchSearch && matchEstado && matchPago && matchEmp && matchDesde && matchHasta
+    })
+  }, [orders, searchTerm, filterEstado, filterTipoPago, filterEmpleado, filterFechaDesde, filterFechaHasta])
+
+  // Paginación calculada
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE))
+  const pagedOrders = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return filteredOrders.slice(start, start + PAGE_SIZE)
+  }, [filteredOrders, currentPage])
+
+  // Reset a página 1 cuando cambian los filtros
+  useEffect(() => { setCurrentPage(1) }, [searchTerm, filterEstado, filterTipoPago, filterEmpleado, filterFechaDesde, filterFechaHasta])
+
+  const activeFiltersCount = [filterEstado, filterTipoPago, filterEmpleado, filterFechaDesde, filterFechaHasta].filter(Boolean).length
+
+  const clearAllFilters = () => {
+    setSearchTerm('')
+    setFilterEstado('')
+    setFilterTipoPago('')
+    setFilterEmpleado('')
+    setFilterFechaDesde('')
+    setFilterFechaHasta('')
+  }
+
+  // Lista única de empleados para el filtro
+  const empleadosUnicos = useMemo(() => {
+    const map = new Map<string, string>()
+    orders.forEach(o => { if (o.employees?.full_name) map.set(o.employees.full_name, o.employees.full_name) })
+    return Array.from(map.values()).sort()
+  }, [orders])
 
   const kpis = useMemo(() => ({
     totalVentas: orders.reduce((s, o) => s + (o.estado !== 'Anulado' ? o.total_venta : 0), 0),
@@ -400,7 +616,7 @@ export default function OrdersPage() {
   const calculateTotal = () => orderProducts.reduce((s, p) => s + p.subtotal, 0)
 
   const handleClearForm = () => {
-    setFormData({ client_id: '', tipo_pago: 'Contado', observacion: '', estado: 'Pendiente' })
+    setFormData({ client_id: '', empleado_id: '', tipo_pago: 'Contado', observacion: '', estado: 'Pendiente' })
     setOrderProducts([])
     setSelectedProduct(null)
     setProductQuantity('1')
@@ -409,7 +625,7 @@ export default function OrdersPage() {
     setFormSuccess(false)
   }
 
-  // ── Crear pedido ──────────────────────────────────────────────────────────
+  // ── Crear pedido ────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.client_id) { setFormError('Selecciona un cliente'); return }
@@ -420,27 +636,21 @@ export default function OrdersPage() {
       setFormError(null)
       const total = calculateTotal()
 
-      // [1] Auth
-      console.log('📦 [1] Obteniendo usuario...')
-      const { data: { user }, error: userErr } = await supabase.auth.getUser()
-      if (userErr) throw userErr
-      console.log('📦 [1] OK —', user?.email)
-
-      // [2] Empleado
-      const { data: empData } = await supabase.from('employees').select('id').eq('email', user?.email).single()
-      console.log('📦 [2] Empleado:', empData?.id || 'no encontrado (se guarda null)')
-
       // GPS
       let gpsWKT: string | null = null
       try {
         const pos = await new Promise<GeolocationPosition>((res, rej) =>
           navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 })
         )
-        gpsWKT = `POINT(${pos.coords.longitude} ${pos.coords.latitude})`
+        gpsWKT = `SRID=4326;POINT(${pos.coords.longitude} ${pos.coords.latitude})`
         console.log('📍 GPS:', gpsWKT)
       } catch { console.log('📍 Sin GPS') }
 
-      console.log('📦 [3] Enviando pedido al API route (bypass RLS)...')
+      // Empleado: usa el seleccionado en el formulario (o null si no seleccionaron)
+      const empleadoIdFinal = formData.empleado_id || null
+      console.log('📦 Empleado seleccionado:', empleadoIdFinal)
+
+      console.log('📦 Enviando pedido al API route...')
       const cabecera = {
         clients_id: formData.client_id,
         tipo_pago: formData.tipo_pago,
@@ -448,7 +658,7 @@ export default function OrdersPage() {
         estado: formData.estado,
         total_venta: total,
         fecha_pedido: new Date().toISOString(),
-        empleado_id: empData?.id || null,
+        empleado_id: empleadoIdFinal,
         ubicacion_venta: gpsWKT,
       }
 
@@ -613,8 +823,8 @@ export default function OrdersPage() {
               )}
 
               <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Cliente + Tipo pago */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Cliente + Vendedor + Tipo pago */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">Cliente <span className="text-red-500">*</span></label>
                   <ClientSearch
@@ -622,6 +832,17 @@ export default function OrdersPage() {
                     onSelect={c => setFormData({ ...formData, client_id: c?.id || '' })}
                     selectedId={formData.client_id}
                   />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Vendedor
+                      <span className="ml-1 text-xs font-normal text-gray-400">(opcional)</span>
+                    </label>
+                    <EmployeeSearch
+                      employees={employees}
+                      onSelect={e => setFormData({ ...formData, empleado_id: e?.id || '' })}
+                      selectedId={formData.empleado_id}
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">Tipo de Pago</label>
@@ -748,13 +969,133 @@ export default function OrdersPage() {
 
             {/* Tabla pedidos */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-              <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
-                <h3 className="font-bold text-gray-700">Pedidos Recientes</h3>
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
-                  <input type="text" placeholder="Buscar..." className="pl-9 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                    value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              {/* Barra de búsqueda y filtros */}
+              <div className="p-4 bg-gray-50 border-b space-y-3">
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-gray-700">Pedidos</h3>
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-black">{filteredOrders.length}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {/* Buscador */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
+                      <input type="text" placeholder="Buscar por cliente, nº doc o empleado..."
+                        className="pl-9 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-64"
+                        value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                    </div>
+                    {/* Botón filtros */}
+                    <button
+                      onClick={() => setShowFilters(v => !v)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-semibold transition-all ${
+                        showFilters || activeFiltersCount > 0
+                          ? 'bg-green-600 text-white border-green-600'
+                          : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
+                      }`}>
+                      <Filter className="w-4 h-4" />
+                      Filtros
+                      {activeFiltersCount > 0 && (
+                        <span className="ml-1 bg-white text-green-700 rounded-full w-5 h-5 text-xs font-black flex items-center justify-center">
+                          {activeFiltersCount}
+                        </span>
+                      )}
+                    </button>
+                    {activeFiltersCount > 0 && (
+                      <button onClick={clearAllFilters}
+                        className="flex items-center gap-1 px-3 py-2 text-sm text-red-600 font-semibold hover:bg-red-50 rounded-lg border border-red-200 transition-all">
+                        <X className="w-4 h-4" /> Limpiar
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Panel de filtros expandible */}
+                {showFilters && (
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-3 border-t border-gray-200">
+                    {/* Estado */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Estado</label>
+                      <select value={filterEstado} onChange={e => setFilterEstado(e.target.value)}
+                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+                        <option value="">Todos</option>
+                        <option value="Pendiente">Pendiente</option>
+                        <option value="Aprobado">Aprobado</option>
+                        <option value="Entregado">Entregado</option>
+                        <option value="Completado">Completado</option>
+                        <option value="Anulado">Anulado</option>
+                      </select>
+                    </div>
+                    {/* Tipo pago */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Tipo de Pago</label>
+                      <select value={filterTipoPago} onChange={e => setFilterTipoPago(e.target.value)}
+                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+                        <option value="">Todos</option>
+                        <option value="Contado">Contado</option>
+                        <option value="Crédito">Crédito</option>
+                      </select>
+                    </div>
+                    {/* Empleado */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Empleado</label>
+                      <select value={filterEmpleado} onChange={e => setFilterEmpleado(e.target.value)}
+                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+                        <option value="">Todos</option>
+                        {empleadosUnicos.map(emp => (
+                          <option key={emp} value={emp}>{emp}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* Fecha desde */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Desde</label>
+                      <input type="date" value={filterFechaDesde} onChange={e => setFilterFechaDesde(e.target.value)}
+                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400" />
+                    </div>
+                    {/* Fecha hasta */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Hasta</label>
+                      <input type="date" value={filterFechaHasta} onChange={e => setFilterFechaHasta(e.target.value)}
+                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Badges de filtros activos */}
+                {activeFiltersCount > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {filterEstado && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
+                        <Tag className="w-3 h-3" /> Estado: {filterEstado}
+                        <button onClick={() => setFilterEstado('')} className="ml-1 hover:text-blue-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {filterTipoPago && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold">
+                        <Tag className="w-3 h-3" /> Pago: {filterTipoPago}
+                        <button onClick={() => setFilterTipoPago('')} className="ml-1 hover:text-purple-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {filterEmpleado && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
+                        <User className="w-3 h-3" /> {filterEmpleado}
+                        <button onClick={() => setFilterEmpleado('')} className="ml-1 hover:text-orange-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {filterFechaDesde && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-100 text-teal-700 rounded-full text-xs font-semibold">
+                        <Calendar className="w-3 h-3" /> Desde: {filterFechaDesde}
+                        <button onClick={() => setFilterFechaDesde('')} className="ml-1 hover:text-teal-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {filterFechaHasta && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-100 text-teal-700 rounded-full text-xs font-semibold">
+                        <Calendar className="w-3 h-3" /> Hasta: {filterFechaHasta}
+                        <button onClick={() => setFilterFechaHasta('')} className="ml-1 hover:text-teal-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {loading ? (
@@ -762,69 +1103,218 @@ export default function OrdersPage() {
                   <Loader2 className="w-8 h-8 text-green-600 animate-spin" />
                 </div>
               ) : (
-                <div className="divide-y divide-gray-100">
-                  {filteredOrders.map(o => (
-                    <div key={o.id}>
-                      {/* Fila principal */}
-                      <div className="grid grid-cols-12 gap-2 p-4 hover:bg-gray-50 transition-colors items-center text-sm">
-                        <div className="col-span-1 font-black text-gray-800">#{o.numero_documento}</div>
-                        <div className="col-span-2 text-gray-500">{format(new Date(o.fecha_pedido), 'dd/MM/yy HH:mm')}</div>
-                        <div className="col-span-3 font-semibold text-gray-800 truncate">{o.clients?.name}</div>
-                        <div className="col-span-2 text-gray-500 truncate">{o.employees?.full_name || '-'}</div>
-                        <div className="col-span-2 font-black text-green-700 text-right">{fmt(o.total_venta)}</div>
-                        <div className="col-span-1 text-center"><StatusBadge status={o.estado} /></div>
-                        <div className="col-span-1 flex items-center justify-end gap-1">
-                          <button onClick={() => handleEditOrder(o)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" title="Editar">
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => loadOrderDetail(o.id)}
-                            className={`p-1.5 rounded transition-colors ${expandedOrderId === o.id ? 'text-green-600 bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}
-                            title="Ver detalle">
-                            {loadingDetails && expandedOrderId !== o.id
-                              ? <Loader2 className="w-4 h-4 animate-spin" />
-                              : expandedOrderId === o.id
-                                ? <ChevronUp className="w-4 h-4" />
-                                : <ChevronDown className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
+                <>
+                  {/* Encabezados de columna */}
+                  <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-100 text-xs font-black text-gray-500 uppercase tracking-wider border-b">
+                    <div className="col-span-1"># Doc</div>
+                    <div className="col-span-2">Fecha</div>
+                    <div className="col-span-3">Cliente</div>
+                    <div className="col-span-2">Empleado</div>
+                    <div className="col-span-2 text-right">Total</div>
+                    <div className="col-span-1 text-center">Estado</div>
+                    <div className="col-span-1"></div>
+                  </div>
 
-                      {/* Detalle expandible */}
-                      {expandedOrderId === o.id && orderDetails[o.id] && (
-                        <div className="bg-green-50/50 border-t border-green-100 px-6 py-4">
-                          <p className="text-xs font-black text-gray-500 uppercase tracking-wider mb-3">Detalle del pedido</p>
-                          {orderDetails[o.id].length === 0 ? (
-                            <p className="text-sm text-gray-400 italic">Sin detalles registrados</p>
-                          ) : (
-                            <div className="space-y-2">
-                              {orderDetails[o.id].map(d => (
-                                <div key={d.id} className="flex items-center justify-between bg-white px-4 py-2.5 rounded-xl border border-gray-200 text-sm">
-                                  <div>
-                                    <span className="font-bold text-gray-800">{d.productos?.nombre_producto || 'Producto eliminado'}</span>
-                                    <span className="text-xs text-gray-500 ml-2">{d.productos?.codigo_producto}</span>
+                  <div className="divide-y divide-gray-100">
+                    {pagedOrders.map(o => (
+                      <div key={o.id}>
+                        {/* Fila principal */}
+                        <div className="grid grid-cols-12 gap-2 p-4 hover:bg-gray-50 transition-colors items-center text-sm">
+                          <div className="col-span-1 font-black text-gray-800">#{o.numero_documento}</div>
+                          <div className="col-span-2 text-gray-500">{format(new Date(o.fecha_pedido), 'dd/MM/yy HH:mm')}</div>
+                          <div className="col-span-3">
+                            <p className="font-semibold text-gray-800 truncate">{o.clients?.name || <span className="text-red-400 italic">Sin cliente</span>}</p>
+                            {o.tipo_pago && (
+                              <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${
+                                o.tipo_pago === 'Crédito' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'
+                              }`}>{o.tipo_pago}</span>
+                            )}
+                          </div>
+                          <div className="col-span-2 text-gray-500 truncate">{o.employees?.full_name || <span className="text-red-400 text-xs italic">Sin vendedor</span>}</div>
+                          <div className="col-span-2 font-black text-green-700 text-right">{fmt(o.total_venta)}</div>
+                          <div className="col-span-1 text-center"><StatusBadge status={o.estado} /></div>
+                          <div className="col-span-1 flex items-center justify-end gap-1">
+                            <button onClick={() => handleEditOrder(o)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" title="Editar">
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => loadOrderDetail(o.id)}
+                              className={`p-1.5 rounded transition-colors ${expandedOrderId === o.id ? 'text-green-600 bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}
+                              title="Ver detalle">
+                              {loadingDetails && expandedOrderId !== o.id
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : expandedOrderId === o.id
+                                  ? <ChevronUp className="w-4 h-4" />
+                                  : <ChevronDown className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Detalle expandible mejorado */}
+                        {expandedOrderId === o.id && orderDetails[o.id] && (() => {
+                          const details = orderDetails[o.id]
+                          // ── Verificación de completitud ──────────────────────
+                          const sinProducto = details.filter(d => !d.productos)
+                          const sinUnidad   = details.filter(d => !d.unidad_seleccionada)
+                          const sumDetalle  = details.reduce((s, d) => s + (d.subtotal || 0), 0)
+                          const diffTotal   = Math.abs(sumDetalle - o.total_venta)
+                          const hayProblemas = sinProducto.length > 0 || sinUnidad.length > 0 || diffTotal > 0.5
+
+                          return (
+                            <div className="bg-green-50/50 border-t border-green-100 px-6 py-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <p className="text-xs font-black text-gray-500 uppercase tracking-wider">
+                                  Detalle del Pedido #{o.numero_documento}
+                                </p>
+                                {/* Badge de salud */}
+                                {hayProblemas ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold">
+                                    <AlertCircle className="w-3 h-3" /> Datos incompletos
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                                    <CheckCircle2 className="w-3 h-3" /> Datos completos
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Alertas de problemas */}
+                              {sinProducto.length > 0 && (
+                                <div className="mb-3 p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                  <span><strong>{sinProducto.length}</strong> línea{sinProducto.length !== 1 ? 's' : ''} sin producto vinculado (el producto puede haber sido eliminado del catálogo o no coincide el código)</span>
+                                </div>
+                              )}
+                              {sinUnidad.length > 0 && (
+                                <div className="mb-3 p-2.5 bg-yellow-50 border border-yellow-200 rounded-xl text-xs text-yellow-700 flex items-start gap-2">
+                                  <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                  <span><strong>{sinUnidad.length}</strong> línea{sinUnidad.length !== 1 ? 's' : ''} sin unidad de medida registrada</span>
+                                </div>
+                              )}
+                              {diffTotal > 0.5 && (
+                                <div className="mb-3 p-2.5 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-700 flex items-start gap-2">
+                                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                  <span>Diferencia entre la suma del detalle (<strong>{fmt(sumDetalle)}</strong>) y el total del pedido (<strong>{fmt(o.total_venta)}</strong>): <strong>{fmt(diffTotal)}</strong></span>
+                                </div>
+                              )}
+
+                              {details.length === 0 ? (
+                                <div className="flex items-center gap-2 text-sm text-red-500 bg-red-50 p-3 rounded-xl border border-red-200">
+                                  <AlertCircle className="w-4 h-4" />
+                                  <span className="font-semibold">Sin detalles registrados — este pedido no tiene líneas de productos</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {/* Encabezado detalle */}
+                                  <div className="grid grid-cols-12 gap-2 px-4 py-1.5 bg-gray-100 text-xs font-bold text-gray-500 uppercase rounded-lg">
+                                    <div className="col-span-4">Producto</div>
+                                    <div className="col-span-2">Código</div>
+                                    <div className="col-span-2 text-center">Cantidad</div>
+                                    <div className="col-span-2 text-right">Precio Unit.</div>
+                                    <div className="col-span-2 text-right">Subtotal</div>
                                   </div>
-                                  <div className="flex items-center gap-6 text-right">
-                                    <span className="text-gray-600">{d.cantidad} {d.unidad_seleccionada}</span>
-                                    <span className="text-gray-600">{fmt(d.precio_unitario)}</span>
-                                    <span className="font-black text-green-700">{fmt(d.subtotal)}</span>
+                                  {details.map(d => {
+                                    const calcSubtotal = (d.cantidad || 0) * (d.precio_unitario || 0)
+                                    const subtotalOk = Math.abs(calcSubtotal - (d.subtotal || 0)) < 0.01
+                                    return (
+                                      <div key={d.id} className={`grid grid-cols-12 gap-2 items-center bg-white px-4 py-2.5 rounded-xl border text-sm ${
+                                        !d.productos ? 'border-red-200 bg-red-50' : 'border-gray-200'
+                                      }`}>
+                                        <div className="col-span-4">
+                                          {d.productos ? (
+                                            <span className="font-bold text-gray-800">{d.productos.nombre_producto}</span>
+                                          ) : (
+                                            <span className="text-red-500 italic font-semibold flex items-center gap-1">
+                                              <AlertCircle className="w-3 h-3" /> Sin coincidencia
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="col-span-2 text-xs text-gray-500 font-mono">
+                                          {d.productos?.codigo_producto || '—'}
+                                        </div>
+                                        <div className="col-span-2 text-center">
+                                          <span className="font-semibold text-gray-700">{d.cantidad}</span>
+                                          <span className="text-xs text-gray-400 ml-1">{d.unidad_seleccionada || <span className="text-yellow-600 font-bold">?</span>}</span>
+                                        </div>
+                                        <div className="col-span-2 text-right text-gray-600">{fmt(d.precio_unitario)}</div>
+                                        <div className="col-span-2 text-right">
+                                          <span className="font-black text-green-700">{fmt(d.subtotal)}</span>
+                                          {!subtotalOk && (
+                                            <span className="block text-xs text-orange-500">calc: {fmt(calcSubtotal)}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                  {/* Footer totales */}
+                                  <div className="flex justify-between items-center pt-3 px-4 border-t border-green-200">
+                                    <div className="text-xs text-gray-500 space-x-4">
+                                      <span><strong>{details.length}</strong> producto{details.length !== 1 ? 's' : ''}</span>
+                                      <span>Suma detalle: <strong className="text-gray-700">{fmt(sumDetalle)}</strong></span>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-xs text-gray-400">Total cabecera</p>
+                                      <p className="font-black text-green-700 text-lg">{fmt(o.total_venta)}</p>
+                                    </div>
                                   </div>
                                 </div>
-                              ))}
-                              <div className="flex justify-between items-center pt-2 px-4">
-                                <span className="text-xs text-gray-500">{orderDetails[o.id].length} producto{orderDetails[o.id].length !== 1 ? 's' : ''}</span>
-                                <span className="font-black text-green-700">{fmt(o.total_venta)}</span>
-                              </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      )}
+                          )
+                        })()}
+                      </div>
+                    ))}
+                    {filteredOrders.length === 0 && (
+                      <div className="flex flex-col items-center py-14 text-gray-400 gap-3">
+                        <ShoppingCart className="w-12 h-12 opacity-30" />
+                        <p className="text-sm font-semibold">No se encontraron pedidos con los filtros aplicados</p>
+                        {activeFiltersCount > 0 && (
+                          <button onClick={clearAllFilters} className="text-green-600 text-sm font-bold hover:underline">Limpiar filtros</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Paginación */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t">
+                      <p className="text-xs text-gray-500">
+                        Mostrando <strong>{(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredOrders.length)}</strong> de <strong>{filteredOrders.length}</strong> pedidos
+                      </p>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+                          let page: number
+                          if (totalPages <= 7) page = i + 1
+                          else if (currentPage <= 4) page = i + 1
+                          else if (currentPage >= totalPages - 3) page = totalPages - 6 + i
+                          else page = currentPage - 3 + i
+                          return (
+                            <button key={page} onClick={() => setCurrentPage(page)}
+                              className={`w-8 h-8 text-xs font-bold rounded-lg transition-all ${
+                                page === currentPage
+                                  ? 'bg-green-600 text-white'
+                                  : 'border border-gray-200 text-gray-600 hover:bg-gray-100'
+                              }`}>
+                              {page}
+                            </button>
+                          )
+                        })}
+                        <button
+                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                          disabled={currentPage === totalPages}
+                          className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                  ))}
-                  {filteredOrders.length === 0 && (
-                    <p className="text-center text-gray-400 py-12 text-sm">No se encontraron pedidos</p>
                   )}
-                </div>
+                </>
               )}
             </div>
           </>
