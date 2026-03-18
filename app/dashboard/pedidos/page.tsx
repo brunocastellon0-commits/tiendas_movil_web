@@ -689,28 +689,7 @@ export default function OrdersPage() {
       console.log('📦 [3+4] OK — pedido_id:', apiJson.pedido_id)
 
 
-      // Sincronización con SQL Server
-      try {
-        const clientSel = clients.find(c => c.id === formData.client_id)
-        await fetch('/api/sync/master', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            entity: 'ORDER',
-            data: {
-              cliente_legacy_id: clientSel?.legacy_id ? parseInt(clientSel.legacy_id) : 0,
-              total_venta: total,
-              items: orderProducts.map(p => ({
-                codigo_producto: p.codigo_producto,
-                cantidad: p.cantidad,
-                precio: p.precio_unitario,
-              })),
-            },
-          }),
-        })
-      } catch (syncErr) {
-        console.warn('Sincronización local omitida:', syncErr)
-      }
+
 
       await fetchData()
       handleClearForm()
