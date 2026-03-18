@@ -15,6 +15,13 @@ import {
   Play,
   ChevronDown,
   ChevronRight,
+  Users,
+  Tag,
+  Truck,
+  Package,
+  Store,
+  ShoppingBag,
+  MapPin,
 } from 'lucide-react'
 
 type SyncResult = {
@@ -37,14 +44,14 @@ type SyncResponse = {
   error?: string
 }
 
-const TABLE_ICONS: Record<string, string> = {
-  employees: '👤',
-  categorias: '🏷️',
-  proveedores: '🚚',
-  productos: '📦',
-  clients: '🏪',
-  pedidos: '🧾',
-  visits: '📍',
+const TABLE_ICONS: Record<string, React.ElementType> = {
+  employees: Users,
+  categorias: Tag,
+  proveedores: Truck,
+  productos: Package,
+  clients: Store,
+  pedidos: ShoppingBag,
+  visits: MapPin,
 }
 
 export default function SyncPage() {
@@ -156,7 +163,7 @@ export default function SyncPage() {
             <div className="space-y-2">
               {['employees', 'categorias', 'proveedores', 'productos', 'clients'].map((t) => (
                 <div key={t} className="flex items-center gap-2 text-sm text-blue-100">
-                  <span>{TABLE_ICONS[t]}</span>
+                  {(() => { const Icon = TABLE_ICONS[t] || Database; return <Icon className="w-4 h-4 text-blue-300" /> })()}
                   <span className="font-mono">{t}</span>
                 </div>
               ))}
@@ -176,7 +183,7 @@ export default function SyncPage() {
             <div className="space-y-2">
               {['pedidos', 'visits'].map((t) => (
                 <div key={t} className="flex items-center gap-2 text-sm text-blue-100">
-                  <span>{TABLE_ICONS[t]}</span>
+                  {(() => { const Icon = TABLE_ICONS[t] || Database; return <Icon className="w-4 h-4 text-blue-300" /> })()}
                   <span className="font-mono">{t}</span>
                 </div>
               ))}
@@ -257,7 +264,7 @@ export default function SyncPage() {
                       className="w-full flex items-center justify-between px-5 py-4 hover:bg-white/5 transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="text-xl">{TABLE_ICONS[r.tabla] || '🗄️'}</span>
+                        {(() => { const Icon = TABLE_ICONS[r.tabla] || Database; return <Icon className="w-5 h-5 text-blue-300 flex-shrink-0" /> })()}
                         <div className="text-left">
                           <span className="font-bold text-white text-sm">{r.tabla}</span>
                           <div className="flex items-center gap-1 mt-0.5">

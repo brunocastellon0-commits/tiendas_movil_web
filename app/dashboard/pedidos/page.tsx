@@ -69,11 +69,12 @@ type OrderProduct = {
 
 type OrderDetail = {
   id: string
-  producto_id: string
+  producto_id: string | null
   cantidad: number
   precio_unitario: number
   subtotal: number
-  unidad_seleccionada: string
+  unidad_seleccionada: string | null
+  factor_aplicado: string | null   // código ERP del producto (fallback cuando no vincula con catálogo)
   productos: { codigo_producto: string; nombre_producto: string } | null
 }
 
@@ -86,7 +87,7 @@ type Order = {
   tipo_pago: string
   observacion: string | null
   ubicacion_venta: any
-  clients: { name: string; legacy_id: string | null } | null
+  clients: { name: string; legacy_id: string | null; code?: string | null } | null
   employees: { full_name: string } | null
 }
 
@@ -463,7 +464,7 @@ export default function OrdersPage() {
     try {
       const [ordersRes, allClients, productsRes, employeesRes] = await Promise.all([
         supabase.from('pedidos')
-          .select('*, clients:clients_id (name, legacy_id), employees:empleado_id (full_name)')
+          .select('*, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
           .order('fecha_pedido', { ascending: false }),
         fetchAllClients(),
         supabase.from('productos')
@@ -492,8 +493,9 @@ export default function OrdersPage() {
   }, [activeTab])
 
   // ── Cargar detalle de un pedido (expandible) ──────────────────────────────
-  const loadOrderDetail = async (orderId: string) => {
-    if (orderDetails[orderId]) {
+  const loadOrderDetail = async (orderId: string, forceRefresh = false) => {
+    // FIX: [] es truthy en JS — usamos !== undefined para detectar si ya se cargo
+    if (!forceRefresh && orderDetails[orderId] !== undefined) {
       setExpandedOrderId(expandedOrderId === orderId ? null : orderId)
       return
     }
@@ -501,8 +503,9 @@ export default function OrdersPage() {
     try {
       const { data, error } = await supabase
         .from('detalle_pedido')
-        .select('id, producto_id, cantidad, precio_unitario, subtotal, unidad_seleccionada, productos:producto_id (codigo_producto, nombre_producto)')
+        .select('id, producto_id, cantidad, precio_unitario, subtotal, unidad_seleccionada, factor_aplicado, productos:producto_id (codigo_producto, nombre_producto)')
         .eq('pedido_id', orderId)
+        .order('created_at')
       if (error) throw error
       setOrderDetails(prev => ({ ...prev, [orderId]: (data as any) || [] }))
       setExpandedOrderId(orderId)
@@ -589,7 +592,7 @@ export default function OrdersPage() {
         nombre_producto: selectedProduct.nombre_producto,
         cantidad: qty,
         precio_unitario: price,
-        unidad_seleccionada: selectedProduct.unidad_base_venta,
+        unidad_seleccionada: 'UND',
         subtotal: qty * price,
       }])
     }
@@ -666,7 +669,7 @@ export default function OrdersPage() {
         producto_id: p.producto_id,
         cantidad: p.cantidad,
         precio_unitario: p.precio_unitario,
-        unidad_seleccionada: p.unidad_seleccionada,
+        unidad_seleccionada: 'UND',
         subtotal: p.subtotal,
         factor_aplicado: 1,
       }))
@@ -967,356 +970,6 @@ export default function OrdersPage() {
               </form>
             </div>
 
-            {/* Tabla pedidos */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-              {/* Barra de búsqueda y filtros */}
-              <div className="p-4 bg-gray-50 border-b space-y-3">
-                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-gray-700">Pedidos</h3>
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-black">{filteredOrders.length}</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 items-center">
-                    {/* Buscador */}
-                    <div className="relative">
-                      <Search className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
-                      <input type="text" placeholder="Buscar por cliente, nº doc o empleado..."
-                        className="pl-9 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 w-64"
-                        value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                    </div>
-                    {/* Botón filtros */}
-                    <button
-                      onClick={() => setShowFilters(v => !v)}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-semibold transition-all ${
-                        showFilters || activeFiltersCount > 0
-                          ? 'bg-green-600 text-white border-green-600'
-                          : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
-                      }`}>
-                      <Filter className="w-4 h-4" />
-                      Filtros
-                      {activeFiltersCount > 0 && (
-                        <span className="ml-1 bg-white text-green-700 rounded-full w-5 h-5 text-xs font-black flex items-center justify-center">
-                          {activeFiltersCount}
-                        </span>
-                      )}
-                    </button>
-                    {activeFiltersCount > 0 && (
-                      <button onClick={clearAllFilters}
-                        className="flex items-center gap-1 px-3 py-2 text-sm text-red-600 font-semibold hover:bg-red-50 rounded-lg border border-red-200 transition-all">
-                        <X className="w-4 h-4" /> Limpiar
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Panel de filtros expandible */}
-                {showFilters && (
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-3 border-t border-gray-200">
-                    {/* Estado */}
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Estado</label>
-                      <select value={filterEstado} onChange={e => setFilterEstado(e.target.value)}
-                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
-                        <option value="">Todos</option>
-                        <option value="Pendiente">Pendiente</option>
-                        <option value="Aprobado">Aprobado</option>
-                        <option value="Entregado">Entregado</option>
-                        <option value="Completado">Completado</option>
-                        <option value="Anulado">Anulado</option>
-                      </select>
-                    </div>
-                    {/* Tipo pago */}
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Tipo de Pago</label>
-                      <select value={filterTipoPago} onChange={e => setFilterTipoPago(e.target.value)}
-                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
-                        <option value="">Todos</option>
-                        <option value="Contado">Contado</option>
-                        <option value="Crédito">Crédito</option>
-                      </select>
-                    </div>
-                    {/* Empleado */}
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Empleado</label>
-                      <select value={filterEmpleado} onChange={e => setFilterEmpleado(e.target.value)}
-                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
-                        <option value="">Todos</option>
-                        {empleadosUnicos.map(emp => (
-                          <option key={emp} value={emp}>{emp}</option>
-                        ))}
-                      </select>
-                    </div>
-                    {/* Fecha desde */}
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Desde</label>
-                      <input type="date" value={filterFechaDesde} onChange={e => setFilterFechaDesde(e.target.value)}
-                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400" />
-                    </div>
-                    {/* Fecha hasta */}
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Hasta</label>
-                      <input type="date" value={filterFechaHasta} onChange={e => setFilterFechaHasta(e.target.value)}
-                        className="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-400" />
-                    </div>
-                  </div>
-                )}
-
-                {/* Badges de filtros activos */}
-                {activeFiltersCount > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {filterEstado && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
-                        <Tag className="w-3 h-3" /> Estado: {filterEstado}
-                        <button onClick={() => setFilterEstado('')} className="ml-1 hover:text-blue-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                    {filterTipoPago && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold">
-                        <Tag className="w-3 h-3" /> Pago: {filterTipoPago}
-                        <button onClick={() => setFilterTipoPago('')} className="ml-1 hover:text-purple-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                    {filterEmpleado && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
-                        <User className="w-3 h-3" /> {filterEmpleado}
-                        <button onClick={() => setFilterEmpleado('')} className="ml-1 hover:text-orange-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                    {filterFechaDesde && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-100 text-teal-700 rounded-full text-xs font-semibold">
-                        <Calendar className="w-3 h-3" /> Desde: {filterFechaDesde}
-                        <button onClick={() => setFilterFechaDesde('')} className="ml-1 hover:text-teal-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                    {filterFechaHasta && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-100 text-teal-700 rounded-full text-xs font-semibold">
-                        <Calendar className="w-3 h-3" /> Hasta: {filterFechaHasta}
-                        <button onClick={() => setFilterFechaHasta('')} className="ml-1 hover:text-teal-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {loading ? (
-                <div className="flex justify-center items-center py-16">
-                  <Loader2 className="w-8 h-8 text-green-600 animate-spin" />
-                </div>
-              ) : (
-                <>
-                  {/* Encabezados de columna */}
-                  <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-100 text-xs font-black text-gray-500 uppercase tracking-wider border-b">
-                    <div className="col-span-1"># Doc</div>
-                    <div className="col-span-2">Fecha</div>
-                    <div className="col-span-3">Cliente</div>
-                    <div className="col-span-2">Empleado</div>
-                    <div className="col-span-2 text-right">Total</div>
-                    <div className="col-span-1 text-center">Estado</div>
-                    <div className="col-span-1"></div>
-                  </div>
-
-                  <div className="divide-y divide-gray-100">
-                    {pagedOrders.map(o => (
-                      <div key={o.id}>
-                        {/* Fila principal */}
-                        <div className="grid grid-cols-12 gap-2 p-4 hover:bg-gray-50 transition-colors items-center text-sm">
-                          <div className="col-span-1 font-black text-gray-800">#{o.numero_documento}</div>
-                          <div className="col-span-2 text-gray-500">{format(new Date(o.fecha_pedido), 'dd/MM/yy HH:mm')}</div>
-                          <div className="col-span-3">
-                            <p className="font-semibold text-gray-800 truncate">{o.clients?.name || <span className="text-red-400 italic">Sin cliente</span>}</p>
-                            {o.tipo_pago && (
-                              <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${
-                                o.tipo_pago === 'Crédito' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'
-                              }`}>{o.tipo_pago}</span>
-                            )}
-                          </div>
-                          <div className="col-span-2 text-gray-500 truncate">{o.employees?.full_name || <span className="text-red-400 text-xs italic">Sin vendedor</span>}</div>
-                          <div className="col-span-2 font-black text-green-700 text-right">{fmt(o.total_venta)}</div>
-                          <div className="col-span-1 text-center"><StatusBadge status={o.estado} /></div>
-                          <div className="col-span-1 flex items-center justify-end gap-1">
-                            <button onClick={() => handleEditOrder(o)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" title="Editar">
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => loadOrderDetail(o.id)}
-                              className={`p-1.5 rounded transition-colors ${expandedOrderId === o.id ? 'text-green-600 bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}
-                              title="Ver detalle">
-                              {loadingDetails && expandedOrderId !== o.id
-                                ? <Loader2 className="w-4 h-4 animate-spin" />
-                                : expandedOrderId === o.id
-                                  ? <ChevronUp className="w-4 h-4" />
-                                  : <ChevronDown className="w-4 h-4" />}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Detalle expandible mejorado */}
-                        {expandedOrderId === o.id && orderDetails[o.id] && (() => {
-                          const details = orderDetails[o.id]
-                          // ── Verificación de completitud ──────────────────────
-                          const sinProducto = details.filter(d => !d.productos)
-                          const sinUnidad   = details.filter(d => !d.unidad_seleccionada)
-                          const sumDetalle  = details.reduce((s, d) => s + (d.subtotal || 0), 0)
-                          const diffTotal   = Math.abs(sumDetalle - o.total_venta)
-                          const hayProblemas = sinProducto.length > 0 || sinUnidad.length > 0 || diffTotal > 0.5
-
-                          return (
-                            <div className="bg-green-50/50 border-t border-green-100 px-6 py-4">
-                              <div className="flex items-center justify-between mb-3">
-                                <p className="text-xs font-black text-gray-500 uppercase tracking-wider">
-                                  Detalle del Pedido #{o.numero_documento}
-                                </p>
-                                {/* Badge de salud */}
-                                {hayProblemas ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold">
-                                    <AlertCircle className="w-3 h-3" /> Datos incompletos
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                                    <CheckCircle2 className="w-3 h-3" /> Datos completos
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Alertas de problemas */}
-                              {sinProducto.length > 0 && (
-                                <div className="mb-3 p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
-                                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                  <span><strong>{sinProducto.length}</strong> línea{sinProducto.length !== 1 ? 's' : ''} sin producto vinculado (el producto puede haber sido eliminado del catálogo o no coincide el código)</span>
-                                </div>
-                              )}
-                              {sinUnidad.length > 0 && (
-                                <div className="mb-3 p-2.5 bg-yellow-50 border border-yellow-200 rounded-xl text-xs text-yellow-700 flex items-start gap-2">
-                                  <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                  <span><strong>{sinUnidad.length}</strong> línea{sinUnidad.length !== 1 ? 's' : ''} sin unidad de medida registrada</span>
-                                </div>
-                              )}
-                              {diffTotal > 0.5 && (
-                                <div className="mb-3 p-2.5 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-700 flex items-start gap-2">
-                                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                  <span>Diferencia entre la suma del detalle (<strong>{fmt(sumDetalle)}</strong>) y el total del pedido (<strong>{fmt(o.total_venta)}</strong>): <strong>{fmt(diffTotal)}</strong></span>
-                                </div>
-                              )}
-
-                              {details.length === 0 ? (
-                                <div className="flex items-center gap-2 text-sm text-red-500 bg-red-50 p-3 rounded-xl border border-red-200">
-                                  <AlertCircle className="w-4 h-4" />
-                                  <span className="font-semibold">Sin detalles registrados — este pedido no tiene líneas de productos</span>
-                                </div>
-                              ) : (
-                                <div className="space-y-2">
-                                  {/* Encabezado detalle */}
-                                  <div className="grid grid-cols-12 gap-2 px-4 py-1.5 bg-gray-100 text-xs font-bold text-gray-500 uppercase rounded-lg">
-                                    <div className="col-span-4">Producto</div>
-                                    <div className="col-span-2">Código</div>
-                                    <div className="col-span-2 text-center">Cantidad</div>
-                                    <div className="col-span-2 text-right">Precio Unit.</div>
-                                    <div className="col-span-2 text-right">Subtotal</div>
-                                  </div>
-                                  {details.map(d => {
-                                    const calcSubtotal = (d.cantidad || 0) * (d.precio_unitario || 0)
-                                    const subtotalOk = Math.abs(calcSubtotal - (d.subtotal || 0)) < 0.01
-                                    return (
-                                      <div key={d.id} className={`grid grid-cols-12 gap-2 items-center bg-white px-4 py-2.5 rounded-xl border text-sm ${
-                                        !d.productos ? 'border-red-200 bg-red-50' : 'border-gray-200'
-                                      }`}>
-                                        <div className="col-span-4">
-                                          {d.productos ? (
-                                            <span className="font-bold text-gray-800">{d.productos.nombre_producto}</span>
-                                          ) : (
-                                            <span className="text-red-500 italic font-semibold flex items-center gap-1">
-                                              <AlertCircle className="w-3 h-3" /> Sin coincidencia
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="col-span-2 text-xs text-gray-500 font-mono">
-                                          {d.productos?.codigo_producto || '—'}
-                                        </div>
-                                        <div className="col-span-2 text-center">
-                                          <span className="font-semibold text-gray-700">{d.cantidad}</span>
-                                          <span className="text-xs text-gray-400 ml-1">{d.unidad_seleccionada || <span className="text-yellow-600 font-bold">?</span>}</span>
-                                        </div>
-                                        <div className="col-span-2 text-right text-gray-600">{fmt(d.precio_unitario)}</div>
-                                        <div className="col-span-2 text-right">
-                                          <span className="font-black text-green-700">{fmt(d.subtotal)}</span>
-                                          {!subtotalOk && (
-                                            <span className="block text-xs text-orange-500">calc: {fmt(calcSubtotal)}</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )
-                                  })}
-                                  {/* Footer totales */}
-                                  <div className="flex justify-between items-center pt-3 px-4 border-t border-green-200">
-                                    <div className="text-xs text-gray-500 space-x-4">
-                                      <span><strong>{details.length}</strong> producto{details.length !== 1 ? 's' : ''}</span>
-                                      <span>Suma detalle: <strong className="text-gray-700">{fmt(sumDetalle)}</strong></span>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-xs text-gray-400">Total cabecera</p>
-                                      <p className="font-black text-green-700 text-lg">{fmt(o.total_venta)}</p>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })()}
-                      </div>
-                    ))}
-                    {filteredOrders.length === 0 && (
-                      <div className="flex flex-col items-center py-14 text-gray-400 gap-3">
-                        <ShoppingCart className="w-12 h-12 opacity-30" />
-                        <p className="text-sm font-semibold">No se encontraron pedidos con los filtros aplicados</p>
-                        {activeFiltersCount > 0 && (
-                          <button onClick={clearAllFilters} className="text-green-600 text-sm font-bold hover:underline">Limpiar filtros</button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Paginación */}
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t">
-                      <p className="text-xs text-gray-500">
-                        Mostrando <strong>{(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredOrders.length)}</strong> de <strong>{filteredOrders.length}</strong> pedidos
-                      </p>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                          disabled={currentPage === 1}
-                          className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
-                          <ChevronLeft className="w-4 h-4" />
-                        </button>
-                        {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
-                          let page: number
-                          if (totalPages <= 7) page = i + 1
-                          else if (currentPage <= 4) page = i + 1
-                          else if (currentPage >= totalPages - 3) page = totalPages - 6 + i
-                          else page = currentPage - 3 + i
-                          return (
-                            <button key={page} onClick={() => setCurrentPage(page)}
-                              className={`w-8 h-8 text-xs font-bold rounded-lg transition-all ${
-                                page === currentPage
-                                  ? 'bg-green-600 text-white'
-                                  : 'border border-gray-200 text-gray-600 hover:bg-gray-100'
-                              }`}>
-                              {page}
-                            </button>
-                          )
-                        })}
-                        <button
-                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                          disabled={currentPage === totalPages}
-                          className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
           </>
         )}
 

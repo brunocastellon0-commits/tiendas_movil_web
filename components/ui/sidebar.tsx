@@ -11,7 +11,8 @@ import {
   UserSquare2,
   ChevronRight,
   CircleDot,
-  RefreshCw
+  RefreshCw,
+  ShoppingCart
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -19,11 +20,11 @@ import { useRouter } from 'next/navigation'
 const menuItems = [
   { name: 'Empleados', href: '/admin/empleado', icon: Users },
   { name: 'Pedidos', href: '/dashboard/pedidos', icon: MapPin },
+  { name: 'Ventas', href: '/dashboard/ventas', icon: ShoppingCart },
   { name: 'Productos', href: '/dashboard/productos', icon: Package },
   { name: 'Pareto', href: '/dashboard/reportes', icon: Settings },
   { name: 'Clientes', href: '/dashboard/clientes', icon: UserSquare2 },
   { name: 'Mapa', href: '/dashboard/mapa', icon: MapPin },
-  { name: 'Editor de Zonas', href: '/dashboard/zonas', icon: CircleDot },
   { name: 'Sincronización', href: '/dashboard/sincronizacion', icon: RefreshCw },
 ]
 

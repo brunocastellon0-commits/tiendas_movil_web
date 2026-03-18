@@ -207,23 +207,27 @@ export async function GET() {
             // 5. Inserción de Detalles
             if (cabeceraGuardada && pedido.detalle_pedido?.length > 0) {
               const detallesParaGuardar = pedido.detalle_pedido.map((det: any) => {
-                const productoSupabase = sbProducts.find((p: any) => String(p.codigo_producto).trim() === String(det.codigo_producto).trim());
-                
+                const productoSupabase = sbProducts.find((p: any) =>
+                  String(p.codigo_producto).trim() === String(det.codigo_producto).trim()
+                );
+
                 const cant = Number(det.cantidad) || 0;
                 const prec = Number(det.precio_unitario) || 0;
                 const subtotal_calc = parseFloat((cant * prec).toFixed(2));
 
                 return {
                   pedido_id: cabeceraGuardada.id,
+                  // Si no hay match en catálogo, guardamos null pero NO descartamos la fila
                   producto_id: productoSupabase ? productoSupabase.id : null,
                   cantidad: cant,
                   precio_unitario: prec,
                   subtotal: subtotal_calc,
-                  // 🟢 Guardamos la unidad de medida del ERP para que no quede vacía
                   unidad_seleccionada: (det.unidad || det.unidadmedida || det.unidad_seleccionada || 'UND').toString().trim(),
+                  // Guardamos el código ERP para poder identificar el producto aunque no vincule
+                  factor_aplicado: det.codigo_producto ? String(det.codigo_producto).trim() : null,
                 };
-              }).filter((det: any) => det.producto_id !== null); 
-
+              });
+              // ✅ Insertamos TODOS los detalles, incluso los sin producto vinculado
               if (detallesParaGuardar.length > 0) {
                 await supabase.from('detalle_pedido').delete().eq('pedido_id', cabeceraGuardada.id);
                 await supabase.from('detalle_pedido').insert(detallesParaGuardar);

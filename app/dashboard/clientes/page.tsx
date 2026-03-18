@@ -1,26 +1,26 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import {
-  Search,
-  Users,
-  MapPin,
-  CreditCard,
-  AlertTriangle,
-  Briefcase,
-  Edit2,
-  Trash2,
-  Save,
-  Loader2,
-  X,
-  Phone,
-  FileText,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
+    AlertTriangle,
+    Briefcase,
+    ChevronLeft,
+    ChevronRight,
+    ChevronsLeft,
+    ChevronsRight,
+    CreditCard,
+    Edit2,
+    FileText,
+    Loader2,
+    MapPin,
+    Phone,
+    Save,
+    Search,
+    Trash2,
+    Users,
+    X,
 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 // Tipos TypeScript
 type Client = {
@@ -214,14 +214,14 @@ export default function ClientsPage() {
         location = `SRID=4326;POINT(${formData.longitude} ${formData.latitude})`
       }
 
-      // vendor_id debe referenciar employees.id, NO auth.users.id directamente.
-      // Buscamos el registro del empleado por email del usuario logueado.
+      // vendor_id debe referenciar employees.id.
+      // Como sabemos que el id de employees es el mismo que auth.users.id, lo buscamos directamente.
       let vendorId: string | null = null
-      if (user?.email) {
+      if (user?.id) {
         const { data: empData } = await supabase
           .from('employees')
           .select('id')
-          .eq('email', user.email)
+          .eq('id', user.id)
           .maybeSingle()
         vendorId = empData?.id ?? null
       }

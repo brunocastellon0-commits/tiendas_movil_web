@@ -1,8 +1,8 @@
 'use client'
 
-import { Bell, ChevronRight, Calendar, Clock } from 'lucide-react'
-import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { Bell, Calendar, ChevronRight, Clock } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 export default function Header() {
   const [showNotifications, setShowNotifications] = useState(false)
@@ -19,15 +19,17 @@ export default function Header() {
       if (user?.email) {
         setUserEmail(user.email)
         
-        // Buscar empleado por email
+        // Buscar empleado por su ID real (Evita conflictos si hay correos parecidos o repetidos)
         const { data: employee } = await supabase
           .from('employees')
-          .select('full_name')
-          .eq('email', user.email)
+          .select('full_name, email')
+          .eq('id', user.id)
           .single()
         
-        if (employee?.full_name) {
-          setUserName(employee.full_name)
+        if (employee) {
+          // Usar el email que viene directo de la BD por seguridad
+          setUserEmail(employee.email || user.email)
+          setUserName(employee.full_name || 'Empleado')
           // Obtener iniciales del nombre
           const names = employee.full_name.split(' ')
           const initials = names.length > 1 

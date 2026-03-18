@@ -5,6 +5,8 @@ import { shareMyLocation } from '@/services/locationService'
 import { createClient } from '@/utils/supabase/client'
 import {
     AlertCircle,
+    Bell,
+    BellOff,
     Check,
     ChevronDown, ChevronUp,
     Eye,
@@ -12,15 +14,16 @@ import {
     Loader2,
     Map as MapIcon,
     MapPin,
-    Plus,
+    Navigation,
     RefreshCw,
-    Route,
     Search,
     ShoppingBag,
     Users,
+    Wifi,
+    WifiOff,
     X
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 // ─── TIPOS ──────────────────────────────────────────────────────────────────
 type EmployeeLocation = {
@@ -28,16 +31,19 @@ type EmployeeLocation = {
   job_title: string; created_at?: string; gps_trust_score?: number; is_active?: boolean
 }
 
-type RoutePoint = {
-  id: string; latitude: number; longitude: number; label: string; color: string
-  client_id: string | null; client_name?: string | null
-  vendor_id: string | null; vendor_name?: string | null; zona_id?: string | null
-}
-
 type PedidoMarker = {
   id: string; latitude: number; longitude: number; cliente_nombre: string
   total_venta: number; fecha: string; empleado_nombre: string
   estado: string; numero_documento: string
+}
+
+type MapAlert = {
+  id: string
+  employee_id: string
+  employee_name: string
+  event_type: 'enabled' | 'disabled' | 'location_update'
+  timestamp: string
+  reason?: string | null
 }
 
 // ─── PARSER WKB/GeoJSON ──────────────────────────────────────────────────────
@@ -64,11 +70,38 @@ function parseLocation(loc: any): { latitude: number | null; longitude: number |
   if (typeof loc === 'object' && loc.type === 'Point' && Array.isArray(loc.coordinates))
     return { longitude: loc.coordinates[0], latitude: loc.coordinates[1] }
   if (typeof loc === 'string') {
-    // ✅ Soporta ambos formatos: "POINT(...)" y "SRID=4326;POINT(...)"
     const m = loc.match(/POINT\s*\(\s*([\-\d.]+)\s+([\-\d.]+)\s*\)/i)
     if (m) return { longitude: parseFloat(m[1]), latitude: parseFloat(m[2]) }
   }
   return { latitude: null, longitude: null }
+}
+
+// ─── HELPERS ────────────────────────────────────────────────────────────────
+function getAlertLabel(alert: MapAlert): { icon: React.ReactNode; text: string; color: string } {
+  if (alert.event_type === 'enabled') return {
+    icon: <Navigation className="w-3.5 h-3.5" />,
+    text: `${alert.employee_name} activó el GPS`,
+    color: 'bg-green-50 border-green-300 text-green-800'
+  }
+  if (alert.event_type === 'disabled') return {
+    icon: <WifiOff className="w-3.5 h-3.5" />,
+    text: `${alert.employee_name} desactivó el GPS${alert.reason ? ` (${alert.reason})` : ''}`,
+    color: 'bg-red-50 border-red-300 text-red-800'
+  }
+  return {
+    icon: <MapPin className="w-3.5 h-3.5" />,
+    text: `${alert.employee_name} actualizó su ubicación`,
+    color: 'bg-blue-50 border-blue-300 text-blue-800'
+  }
+}
+
+function timeAgo(ts: string) {
+  const diffMins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000)
+  if (diffMins < 1) return 'Ahora mismo'
+  if (diffMins < 60) return `Hace ${diffMins} min`
+  const h = Math.floor(diffMins / 60)
+  if (h < 24) return `Hace ${h}h`
+  return new Date(ts).toLocaleDateString()
 }
 
 // ─── COMPONENTE PRINCIPAL ────────────────────────────────────────────────────
@@ -78,58 +111,45 @@ export default function EmployeesMapPage() {
   // ── Datos
   const [locations, setLocations] = useState<EmployeeLocation[]>([])
   const [pedidos, setPedidos] = useState<PedidoMarker[]>([])
-  const [routePoints, setRoutePoints] = useState<RoutePoint[]>([])
-  const [clients, setClients] = useState<{ id: string; name: string; code: string }[]>([])
   const [employees, setEmployees] = useState<{ id: string; full_name: string }[]>([])
-  const [zonas, setZonas] = useState<{ id: string; codigo_zona: string; name: string }[]>([])
+
+  // ── Alertas en tiempo real
+  const [alerts, setAlerts] = useState<MapAlert[]>([])
+  const [showAlerts, setShowAlerts] = useState(true)
+  const alertsRef = useRef<MapAlert[]>([])
+  alertsRef.current = alerts
 
   // ── Carga
   const [loadingMap, setLoadingMap] = useState(true)
-  const [loadingPoints, setLoadingPoints] = useState(false)
-  const [pointsLoaded, setPointsLoaded] = useState(false)   // ¿ya se cargaron puntos al menos una vez?
   const [error, setError] = useState<string | null>(null)
 
   // ── UI
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [currentEmployeeId, setCurrentEmployeeId] = useState<string | null>(null)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [sharingLocation, setSharingLocation] = useState(false)
   const [shareSuccess, setShareSuccess] = useState(false)
   const [shareError, setShareError] = useState<string | null>(null)
 
-  // ── Filtros (solo preventista + ruta)
+  // ── Filtros
   const [filterEmployee, setFilterEmployee] = useState<string>('ALL')
-  const [filterZona, setFilterZona] = useState<string>('')   // '' = no seleccionado aún
 
   // ── Capas del mapa
   const [showPedidos, setShowPedidos] = useState(true)
-  const [showRoutePoints, setShowRoutePoints] = useState(true)
   const [showEmployees, setShowEmployees] = useState(true)
-
-  // ── Paneles desplegables
-  const [showEmployeeList, setShowEmployeeList] = useState(false)
-  const [showPointList, setShowPointList] = useState(false)
-
-  // ── Crear punto de ruta
-  const [creatingRoutePoint, setCreatingRoutePoint] = useState(false)
-  const [newPoint, setNewPoint] = useState<{ lat: number; lng: number } | null>(null)
-  const [newPointLabel, setNewPointLabel] = useState('')
-  const [newPointVendorId, setNewPointVendorId] = useState('')
-  const [savingPoint, setSavingPoint] = useState(false)
-
-  // ── Modal visita
-  const [selectedVisit, setSelectedVisit] = useState<any | null>(null)
-  const [showVisitModal, setShowVisitModal] = useState(false)
-  const [visits, setVisits] = useState<any[]>([])
   const [showVisits, setShowVisits] = useState(true)
 
-  // ── Modal pedido
-  const [selectedPedido, setSelectedPedido] = useState<PedidoMarker | null>(null)
-  const [showPedidoModal, setShowPedidoModal] = useState(false)
-
-  // ── Listado de pedidos (panel colapsable)
+  // ── Paneles
+  const [showEmployeeList, setShowEmployeeList] = useState(false)
   const [showPedidoList, setShowPedidoList] = useState(false)
   const PEDIDO_PAGE_SIZE = 20
   const [pedidoPage, setPedidoPage] = useState(1)
+
+  // ── Modales
+  const [selectedVisit, setSelectedVisit] = useState<any | null>(null)
+  const [showVisitModal, setShowVisitModal] = useState(false)
+  const [visits, setVisits] = useState<any[]>([])
+  const [selectedPedido, setSelectedPedido] = useState<PedidoMarker | null>(null)
+  const [showPedidoModal, setShowPedidoModal] = useState(false)
 
   // ─── INIT: empleado actual ──────────────────────────────────────────────────
   useEffect(() => {
@@ -140,17 +160,13 @@ export default function EmployeesMapPage() {
     })
   }, [])
 
-  // ─── Cargar catálogos (zonas, empleados) ──────────────────────────────────
+  // ─── Cargar catálogo de empleados ─────────────────────────────────────────
   useEffect(() => {
-    supabase.from('zones').select('id, codigo_zona, name').order('codigo_zona')
-      .then(({ data }) => { if (data) setZonas(data) })
     supabase.from('employees').select('id, full_name').order('full_name')
       .then(({ data }) => { if (data) setEmployees(data) })
-    supabase.from('clients').select('id, name, code').eq('status', 'Vigente').order('name').limit(500)
-      .then(({ data }) => { if (data) setClients(data as any) })
   }, [])
 
-  // ─── Cargar mapa base (empleados GPS + pedidos) ────────────────────────────
+  // ─── Cargar mapa base ────────────────────────────────────────────────────
   const fetchMapBase = async () => {
     try {
       setLoadingMap(true)
@@ -185,7 +201,7 @@ export default function EmployeesMapPage() {
         setLocations(processed)
       }
 
-      // Pedidos con ubicación — solo los filtrados por empleado
+      // Pedidos con ubicación
       try {
         let q = supabase.from('pedidos')
           .select(`id, numero_documento, fecha_pedido, total_venta, estado, empleado_id,
@@ -214,8 +230,7 @@ export default function EmployeesMapPage() {
         }
       } catch { /* silencioso */ }
 
-      // Visitas — usa check_in_location (al llegar) como posición principal
-      // Fallback a check_out_location para registros anteriores sin check_in
+      // Visitas
       try {
         let q = supabase.from('visits')
           .select('*, clients:client_id (name, legacy_id), employees:seller_id (full_name), check_in_location, check_out_location')
@@ -234,42 +249,100 @@ export default function EmployeesMapPage() {
     }
   }
 
-  // Carga inicial (solo mapa base, sin puntos)
-  useEffect(() => {
-    fetchMapBase()
-  }, [filterEmployee])
+  useEffect(() => { fetchMapBase() }, [filterEmployee])
 
-  // ─── Cargar puntos de ruta (solo cuando el usuario elige una ruta) ─────────
-  const fetchRoutePoints = async () => {
-    if (!filterZona) return   // requiere ruta seleccionada
-    setLoadingPoints(true)
+  // ─── Cargar alertas iniciales ────────────────────────────────────────────
+  const loadInitialAlerts = async () => {
     try {
-      let q = supabase
-        .from('route_points')
-        .select(`id, latitude, longitude, label, color, vendor_id, zona_id, client_id,
-          clients:client_id (name),
-          employees:vendor_id (full_name)`)
-        .eq('zona_id', filterZona)
-        .order('created_at', { ascending: false })
-        .limit(500)
-
-      if (filterEmployee !== 'ALL') q = q.eq('vendor_id', filterEmployee)
-
-      const { data } = await q
+      const { data } = await supabase
+        .from('location_events')
+        .select('id, employee_id, event_type, reason, timestamp, employees:employee_id (full_name)')
+        .order('timestamp', { ascending: false })
+        .limit(20)
       if (data) {
-        setRoutePoints(data.map((rp: any) => ({
-          ...rp,
-          client_name: rp.clients?.name || null,
-          vendor_name: rp.employees?.full_name || null,
-        })))
-        setPointsLoaded(true)
+        const mapped: MapAlert[] = data.map((e: any) => ({
+          id: e.id,
+          employee_id: e.employee_id,
+          employee_name: e.employees?.full_name || 'Empleado',
+          event_type: e.event_type as 'enabled' | 'disabled',
+          timestamp: e.timestamp,
+          reason: e.reason,
+        }))
+        setAlerts(mapped)
       }
-    } catch (e) {
-      console.warn('Error cargando puntos de ruta:', e)
-    } finally {
-      setLoadingPoints(false)
-    }
+    } catch { /* silencioso */ }
   }
+
+  // ─── Suscripción Realtime a location_events ─────────────────────────────
+  useEffect(() => {
+    loadInitialAlerts()
+
+    // Suscripción a nuevos eventos GPS
+    const eventsChannel = supabase
+      .channel('location-events-realtime')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'location_events'
+      }, async (payload) => {
+        const ev = payload.new as any
+        // Fetch employee name
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('full_name')
+          .eq('id', ev.employee_id)
+          .single()
+        const newAlert: MapAlert = {
+          id: ev.id,
+          employee_id: ev.employee_id,
+          employee_name: emp?.full_name || 'Empleado',
+          event_type: ev.event_type as 'enabled' | 'disabled',
+          timestamp: ev.timestamp || ev.created_at,
+          reason: ev.reason,
+        }
+        setAlerts(prev => [newAlert, ...prev].slice(0, 30))
+      })
+      .subscribe()
+
+    // Suscripción a actualizaciones de ubicación (location_history)
+    const histChannel = supabase
+      .channel('location-history-realtime')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'location_history'
+      }, async (payload) => {
+        const ev = payload.new as any
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('full_name')
+          .eq('id', ev.employee_id)
+          .single()
+        const locAlert: MapAlert = {
+          id: ev.id,
+          employee_id: ev.employee_id,
+          employee_name: emp?.full_name || 'Empleado',
+          event_type: 'location_update',
+          timestamp: ev.timestamp || ev.created_at,
+        }
+        // Only add location_update alerts — avoid flood: skip if same employee updated < 2 min ago
+        const recent = alertsRef.current.find(
+          a => a.employee_id === ev.employee_id && a.event_type === 'location_update' &&
+          (Date.now() - new Date(a.timestamp).getTime()) < 120000
+        )
+        if (!recent) {
+          setAlerts(prev => [locAlert, ...prev].slice(0, 30))
+        }
+        // Also refresh map base to move the marker
+        fetchMapBase()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(eventsChannel)
+      supabase.removeChannel(histChannel)
+    }
+  }, [])
 
   // ─── Compartir ubicación ──────────────────────────────────────────────────
   const handleShareLocation = async () => {
@@ -279,44 +352,6 @@ export default function EmployeesMapPage() {
     if (result.success) { setShareSuccess(true); setTimeout(() => { fetchMapBase(); setShareSuccess(false) }, 1000) }
     else setShareError(result.error || 'Error al compartir ubicación')
     setSharingLocation(false)
-  }
-
-  // ─── Crear punto de ruta ──────────────────────────────────────────────────
-  const handleNewRoutePoint = (lat: number, lng: number) => {
-    setNewPoint({ lat, lng })
-    setCreatingRoutePoint(false)
-  }
-
-  const handleSaveRoutePoint = async () => {
-    if (!newPoint) return
-    setSavingPoint(true)
-    try {
-      const { error } = await supabase.from('route_points').insert({
-        latitude: newPoint.lat,
-        longitude: newPoint.lng,
-        label: newPointLabel || `Punto ${new Date().toLocaleTimeString('es-BO')}`,
-        color: '#6366f1',
-        vendor_id: newPointVendorId || currentEmployeeId || null,
-        client_id: null,
-        zona_id: filterZona || null,
-      })
-      if (error) throw error
-      setNewPoint(null); setNewPointLabel(''); setNewPointVendorId('')
-      if (filterZona) await fetchRoutePoints()
-    } catch (err: any) {
-      alert('Error al guardar punto: ' + err.message)
-    } finally {
-      setSavingPoint(false)
-    }
-  }
-
-  const handleAssignClient = async (pointId: string, clientId: string) => {
-    const client = clients.find(c => c.id === clientId)
-    const { error } = await supabase
-      .from('route_points')
-      .update({ client_id: clientId, label: client?.name || 'Cliente' })
-      .eq('id', pointId)
-    if (!error) await fetchRoutePoints()
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -339,8 +374,6 @@ export default function EmployeesMapPage() {
     last_update: getRelativeTime(emp.created_at)
   })) : []
 
-  const selectedZona = zonas.find(z => z.id === filterZona)
-
   // ─── UI ───────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6">
@@ -356,10 +389,10 @@ export default function EmployeesMapPage() {
             </div>
             <div>
               <h1 className="text-2xl font-black bg-gradient-to-r from-green-600 to-emerald-500 bg-clip-text text-transparent">
-                Mapa de Rutas
+                Mapa en Tiempo Real
               </h1>
               <p className="text-gray-500 text-xs font-medium">
-                {validLocations.length} empleados · {pedidos.length} pedidos{pointsLoaded ? ` · ${routePoints.length} puntos de ruta` : ''}
+                {validLocations.length} empleados · {pedidos.length} pedidos · {visits.length} visitas
               </p>
             </div>
           </div>
@@ -384,7 +417,63 @@ export default function EmployeesMapPage() {
           </div>
         )}
 
-        {/* ── FILTROS SIMPLIFICADOS ── */}
+        {/* ── PANEL DE ALERTAS EN TIEMPO REAL ── */}
+        <div className="bg-white rounded-3xl shadow-lg border-2 border-amber-100 overflow-hidden">
+          <button
+            onClick={() => setShowAlerts(!showAlerts)}
+            className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-amber-50 transition-all"
+          >
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-amber-100 rounded-xl">
+                <Bell className="w-4 h-4 text-amber-600" />
+              </div>
+              <span className="font-black text-gray-900 text-sm">Alertas en Tiempo Real</span>
+              {alerts.length > 0 && (
+                <span className="bg-amber-500 text-white text-xs font-black px-2 py-0.5 rounded-full animate-pulse">
+                  {alerts.length}
+                </span>
+              )}
+              <span className="text-xs text-gray-400 font-medium">Actividad GPS de empleados</span>
+            </div>
+            {showAlerts ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+          </button>
+          {showAlerts && (
+            <div className="px-4 pb-4">
+              {alerts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-2 text-gray-400">
+                  <BellOff className="w-8 h-8 opacity-40" />
+                  <p className="text-sm font-medium">Sin actividad reciente</p>
+                  <p className="text-xs">Las alertas aparecerán aquí cuando los empleados actualicen su GPS</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                  {alerts.map(alert => {
+                    const { icon, text, color } = getAlertLabel(alert)
+                    return (
+                      <div key={alert.id} className={`flex items-start gap-2.5 px-3 py-2 rounded-xl border text-sm ${color}`}>
+                        <div className="flex-shrink-0 mt-0.5">{icon}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold truncate">{text}</p>
+                        </div>
+                        <span className="text-[11px] font-medium opacity-60 flex-shrink-0 mt-0.5">{timeAgo(alert.timestamp)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="flex justify-end mt-2">
+                <button
+                  onClick={() => setAlerts([])}
+                  className="text-xs text-gray-400 hover:text-red-500 font-bold transition-colors"
+                >
+                  Limpiar alertas
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── FILTROS ── */}
         <div className="bg-white p-4 rounded-3xl shadow-lg border-2 border-green-100">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             {/* Preventista */}
@@ -398,61 +487,15 @@ export default function EmployeesMapPage() {
                 {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
               </select>
             </div>
-
-            {/* Ruta — selector + botón cargar */}
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1">
-                <Route className="w-3.5 h-3.5" /> Ruta de Puntos
-                <span className="text-amber-500 ml-1 text-[10px] font-black">▸ Selecciona para cargar puntos</span>
-              </label>
-              <div className="flex gap-2">
-                <select
-                  value={filterZona}
-                  onChange={e => { setFilterZona(e.target.value); setRoutePoints([]); setPointsLoaded(false) }}
-                  className={`flex-1 px-3 py-2.5 text-sm border-2 rounded-xl focus:outline-none focus:ring-2 transition-all font-medium ${
-                    filterZona
-                      ? 'border-purple-400 text-purple-900 bg-purple-50 focus:ring-purple-500'
-                      : 'border-gray-200 text-gray-500 focus:ring-green-500'
-                  }`}>
-                  <option value="">— Seleccionar ruta —</option>
-                  {zonas.map(z => (
-                    <option key={z.id} value={z.id}>{z.codigo_zona} — {z.name}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={fetchRoutePoints}
-                  disabled={!filterZona || loadingPoints}
-                  title={!filterZona ? 'Selecciona una ruta primero' : 'Cargar puntos de esta ruta'}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow flex-shrink-0 ${
-                    !filterZona ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                    : loadingPoints ? 'bg-purple-400 text-white cursor-wait'
-                    : 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:scale-105'
-                  }`}>
-                  {loadingPoints ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                  {loadingPoints ? '...' : 'Cargar'}
-                </button>
-              </div>
-              {filterZona && pointsLoaded && (
-                <p className="text-xs text-purple-600 font-bold mt-1.5">
-                  ✓ {routePoints.length} puntos cargados para {selectedZona?.codigo_zona}
-                </p>
-              )}
-              {filterZona && !pointsLoaded && !loadingPoints && (
-                <p className="text-xs text-amber-600 font-semibold mt-1.5">
-                  ⚠ Presiona "Cargar" para ver los puntos de {selectedZona?.codigo_zona}
-                </p>
-              )}
-            </div>
           </div>
 
           {/* Capas del mapa */}
           <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-100">
             <span className="text-xs font-bold text-gray-500 self-center mr-1">Capas:</span>
             {[
-              { key: 'emp', label: `👤 Empleados (${validLocations.length})`, state: showEmployees, set: setShowEmployees },
-              { key: 'vis', label: `📍 Visitas (${visits.length})`, state: showVisits, set: setShowVisits },
-              { key: 'ped', label: `🛒 Pedidos (${pedidos.length})`, state: showPedidos, set: setShowPedidos },
-              { key: 'rp', label: `🗺️ Puntos${pointsLoaded ? ` (${routePoints.length})` : ''}`, state: showRoutePoints && pointsLoaded, set: (v: boolean) => { if (pointsLoaded) setShowRoutePoints(v) } },
+              { key: 'emp', label: `Empleados (${validLocations.length})`, state: showEmployees, set: setShowEmployees },
+              { key: 'vis', label: `Visitas (${visits.length})`, state: showVisits, set: setShowVisits },
+              { key: 'ped', label: `Pedidos (${pedidos.length})`, state: showPedidos, set: setShowPedidos },
             ].map(layer => (
               <button key={layer.key} onClick={() => layer.set(!layer.state)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all ${layer.state ? 'bg-gray-900 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
@@ -460,57 +503,15 @@ export default function EmployeesMapPage() {
                 {layer.label}
               </button>
             ))}
-            {(filterEmployee !== 'ALL' || filterZona) && (
+            {filterEmployee !== 'ALL' && (
               <button
-                onClick={() => { setFilterEmployee('ALL'); setFilterZona(''); setRoutePoints([]); setPointsLoaded(false) }}
-                className="ml-auto text-xs text-red-500 hover:underline font-bold self-center">
+                onClick={() => setFilterEmployee('ALL')}
+                className="ml-auto text-xs text-red-500 hover:underline font-bold self-center"
+              >
                 ✕ Limpiar filtros
               </button>
             )}
           </div>
-        </div>
-
-        {/* ── CREAR PUNTO DE RUTA (colapsado en sección pequeña) ── */}
-        <div className={`bg-white rounded-3xl shadow border-2 transition-all ${creatingRoutePoint ? 'border-indigo-400 bg-indigo-50' : 'border-green-100'}`}>
-          <div className="flex items-center justify-between px-5 py-3">
-            <div className="flex items-center gap-2">
-              <Route className="w-4 h-4 text-indigo-500" />
-              <span className="font-bold text-gray-900 text-sm">Crear Punto de Ruta</span>
-              {filterZona && <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">{selectedZona?.codigo_zona}</span>}
-            </div>
-            <button
-              onClick={() => { setCreatingRoutePoint(!creatingRoutePoint); setNewPoint(null) }}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-sm transition-all ${creatingRoutePoint ? 'bg-red-500 text-white' : 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:scale-105'} shadow`}>
-              {creatingRoutePoint ? <><X className="w-3.5 h-3.5" /> Cancelar</> : <><Plus className="w-3.5 h-3.5" /> Nuevo</>}
-            </button>
-          </div>
-          {newPoint && (
-            <div className="px-5 pb-4 animate-pulse-once">
-              <div className="p-4 bg-indigo-50 border-2 border-indigo-200 rounded-2xl">
-                <p className="text-xs font-bold text-indigo-700 mb-3">📍 {newPoint.lat.toFixed(5)}, {newPoint.lng.toFixed(5)}</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                  <input type="text" placeholder="Etiqueta del punto..."
-                    value={newPointLabel} onChange={e => setNewPointLabel(e.target.value)}
-                    className="px-3 py-2 border-2 border-indigo-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                  <select value={newPointVendorId} onChange={e => setNewPointVendorId(e.target.value)}
-                    className="px-3 py-2 border-2 border-indigo-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                    <option value="">Preventista (opcional)</option>
-                    {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
-                  </select>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={handleSaveRoutePoint} disabled={savingPoint}
-                    className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow disabled:opacity-50">
-                    {savingPoint ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    {savingPoint ? 'Guardando...' : 'Guardar'}
-                  </button>
-                  <button onClick={() => setNewPoint(null)} className="px-4 py-2 border-2 border-gray-200 text-gray-600 rounded-xl font-bold text-sm hover:bg-gray-50">
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {error && (
@@ -526,19 +527,12 @@ export default function EmployeesMapPage() {
               <h2 className="text-lg font-black text-gray-900">Mapa Interactivo</h2>
               <p className="text-xs text-gray-500 font-medium">
                 {[
-                  showEmployees && `${validLocations.length} empleados`,
-                  showVisits && `${visits.length} visitas`,
-                  showPedidos && `${pedidos.length} pedidos`,
-                  showRoutePoints && pointsLoaded && `${routePoints.length} puntos${selectedZona ? ` (${selectedZona.codigo_zona})` : ''}`,
-                ].filter(Boolean).join(' · ') || 'Sin filtros activos'}
-                {creatingRoutePoint && <span className="ml-2 text-indigo-600 font-bold animate-pulse">🎯 Clic en mapa para colocar punto</span>}
+                showEmployees && `${validLocations.length} empleados`,
+                showVisits && `${visits.length} visitas`,
+                showPedidos && `${pedidos.length} pedidos`,
+              ].filter(Boolean).join(' · ') || 'Sin filtros activos'}
               </p>
             </div>
-            {!pointsLoaded && filterZona && (
-              <div className="bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5">
-                <p className="text-xs text-amber-700 font-bold">⚠ Presiona "Cargar" para ver puntos</p>
-              </div>
-            )}
           </div>
           <div className="p-3">
             <MapLoader
@@ -546,13 +540,13 @@ export default function EmployeesMapPage() {
               selectedEmployeeId={selectedEmployeeId}
               visits={showVisits ? visits : []}
               pedidos={showPedidos ? pedidos : []}
-              routePoints={showRoutePoints && pointsLoaded ? routePoints : []}
+              routePoints={[]}
               onVisitClick={(v) => { setSelectedVisit(v); setShowVisitModal(true) }}
               onPedidoClick={(p: PedidoMarker) => { setSelectedPedido(p); setShowPedidoModal(true) }}
-              creatingRoutePoint={creatingRoutePoint}
-              onNewRoutePoint={handleNewRoutePoint}
-              clients={clients}
-              onAssignClient={handleAssignClient}
+              creatingRoutePoint={false}
+              onNewRoutePoint={() => {}}
+              clients={[]}
+              onAssignClient={async () => {}}
             />
           </div>
         </div>
@@ -599,69 +593,6 @@ export default function EmployeesMapPage() {
           </div>
         )}
 
-        {/* ── LISTA PUNTOS DE RUTA (colapsable) ── */}
-        {pointsLoaded && (
-          <div className="bg-white rounded-3xl shadow border-2 border-indigo-100 overflow-hidden">
-            <button
-              onClick={() => setShowPointList(!showPointList)}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-indigo-50 transition-all"
-            >
-              <div className="flex items-center gap-2">
-                <Route className="w-4 h-4 text-indigo-500" />
-                <span className="font-black text-gray-900 text-sm">Puntos de Ruta</span>
-                {selectedZona && (
-                  <span className="bg-purple-100 text-purple-700 text-xs font-black px-2 py-0.5 rounded-full">
-                    {selectedZona.codigo_zona}
-                  </span>
-                )}
-                <span className="bg-indigo-100 text-indigo-700 text-xs font-black px-2 py-0.5 rounded-full">
-                  {routePoints.length} puntos
-                </span>
-              </div>
-              {showPointList ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-            </button>
-            {showPointList && (
-              <div className="px-5 pb-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {routePoints.map(rp => (
-                    <div key={rp.id} className={`p-3 rounded-2xl border-2 ${rp.client_id ? 'border-green-200 bg-green-50' : 'border-indigo-100 bg-gray-50'}`}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-bold text-gray-900 text-xs truncate">
-                            {rp.client_id ? `🏪 ${rp.client_name}` : `📍 ${rp.label || 'Sin etiqueta'}`}
-                          </p>
-                          {rp.vendor_name && <p className="text-[10px] text-gray-500">👤 {rp.vendor_name}</p>}
-                          <p className="text-[10px] font-mono text-gray-400">{rp.latitude.toFixed(4)}, {rp.longitude.toFixed(4)}</p>
-                        </div>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${rp.client_id ? 'bg-green-200 text-green-700' : 'bg-indigo-200 text-indigo-700'}`}>
-                          {rp.client_id ? 'Asignado' : 'Libre'}
-                        </span>
-                      </div>
-                      {!rp.client_id && (
-                        <div className="mt-2 flex gap-1.5">
-                          <select id={`list-assign-${rp.id}`}
-                            className="flex-1 px-2 py-1 text-xs border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400">
-                            <option value="">Asignar cliente...</option>
-                            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                          <button
-                            onClick={() => {
-                              const sel = document.getElementById(`list-assign-${rp.id}`) as HTMLSelectElement
-                              if (sel?.value) handleAssignClient(rp.id, sel.value)
-                            }}
-                            className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700">
-                            OK
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* ── LISTA DE PEDIDOS (colapsable) ── */}
         {pedidos.length > 0 && (
           <div className="bg-white rounded-3xl shadow border-2 border-green-100 overflow-hidden">
@@ -683,7 +614,6 @@ export default function EmployeesMapPage() {
               const paged = pedidos.slice((pedidoPage - 1) * PEDIDO_PAGE_SIZE, pedidoPage * PEDIDO_PAGE_SIZE)
               return (
                 <div className="px-5 pb-5">
-                  {/* Encabezado tabla */}
                   <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-100 text-xs font-black text-gray-500 uppercase rounded-xl mb-2">
                     <div className="col-span-2"># Doc</div>
                     <div className="col-span-2">Fecha</div>
@@ -710,7 +640,6 @@ export default function EmployeesMapPage() {
                       </div>
                     ))}
                   </div>
-                  {/* Paginación */}
                   {totalPedidoPages > 1 && (
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
                       <p className="text-xs text-gray-500">
@@ -773,17 +702,17 @@ export default function EmployeesMapPage() {
                 <div className="bg-gray-50 p-3 rounded-2xl">
                   <p className="text-xs text-gray-500 mb-0.5">Estado</p>
                   <p className="font-bold text-sm">
-                    {selectedPedido.estado === 'Pendiente' ? '⏳ Pendiente'
-                      : selectedPedido.estado === 'Aprobado' ? '✅ Aprobado'
-                      : selectedPedido.estado === 'Entregado' ? '📦 Entregado'
-                      : selectedPedido.estado === 'Completado' ? '✔️ Completado'
-                      : '❌ ' + selectedPedido.estado}
+                    {selectedPedido.estado === 'Pendiente' ? 'Pendiente'
+                      : selectedPedido.estado === 'Aprobado' ? 'Aprobado'
+                      : selectedPedido.estado === 'Entregado' ? 'Entregado'
+                      : selectedPedido.estado === 'Completado' ? 'Completado'
+                      : selectedPedido.estado}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 p-3 rounded-2xl text-xs text-blue-700">
                 <FileText className="w-4 h-4 flex-shrink-0" />
-                <span>Para ver el detalle completo de productos, ve a la pestaña <strong>Pedidos</strong> y busca #{selectedPedido.numero_documento}</span>
+                <span>Para ver el detalle completo, ve a <strong>Ventas</strong> y busca #{selectedPedido.numero_documento}</span>
               </div>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setShowPedidoModal(false)}
@@ -820,7 +749,7 @@ export default function EmployeesMapPage() {
                 </div>
                 <div className="bg-gray-50 p-3 rounded-2xl">
                   <p className="text-xs text-gray-500 mb-0.5">Resultado</p>
-                  <p className="font-bold text-sm">{selectedVisit.outcome === 'sale' ? '💰 Venta' : selectedVisit.outcome === 'no_sale' ? '✗ Sin Venta' : '🔒 Cerrado'}</p>
+                  <p className="font-bold text-sm">{selectedVisit.outcome === 'sale' ? 'Venta' : selectedVisit.outcome === 'no_sale' ? 'Sin Venta' : 'Cerrado'}</p>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-2xl">
                   <p className="text-xs text-gray-500 mb-0.5">Fecha</p>
