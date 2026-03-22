@@ -31,7 +31,6 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import EmployeesTab from './components/EmployeesTab'
-import ReportsTab from './components/ReportsTab'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type Product = {
@@ -396,7 +395,7 @@ function EmployeeSearch({
 export default function OrdersPage() {
   const supabase = createClient()
 
-  const [activeTab, setActiveTab] = useState<'pedidos' | 'empleados' | 'reportes'>('pedidos')
+  const [activeTab, setActiveTab] = useState<'pedidos' | 'empleados'>('pedidos')
 
   // Datos
   const [orders, setOrders] = useState<Order[]>([])
@@ -755,13 +754,13 @@ export default function OrdersPage() {
             </button>
           </div>
           <nav className="flex flex-col sm:flex-row gap-3 bg-white p-3 rounded-3xl border-2 border-green-100 shadow-lg">
-            {(['pedidos', 'empleados', 'reportes'] as const).map(tab => (
+            {(['pedidos', 'empleados'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-bold text-sm transition-all capitalize ${
                   activeTab === tab ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg' : 'text-gray-700 hover:bg-green-50'
                 }`}>
-                {tab === 'pedidos' ? <ShoppingCart className="w-5 h-5" /> : tab === 'empleados' ? <User className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
-                {tab === 'pedidos' ? 'Pedidos' : tab === 'empleados' ? 'Por Empleado' : 'Reportes'}
+                {tab === 'pedidos' ? <ShoppingCart className="w-5 h-5" /> : <User className="w-5 h-5" />}
+                {tab === 'pedidos' ? 'Pedidos' : 'Por Empleado'}
               </button>
             ))}
           </nav>
@@ -951,9 +950,7 @@ export default function OrdersPage() {
 
           </>
         )}
-
         {activeTab === 'empleados' && <EmployeesTab />}
-        {activeTab === 'reportes' && <ReportsTab />}
 
         {/* Modal editar pedido */}
         {showEditModal && editingOrder && (
