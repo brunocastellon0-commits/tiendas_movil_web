@@ -8,18 +8,15 @@ import {
     CalendarDays,
     Check,
     CheckCircle2,
-    ChevronDown, ChevronUp,
     Loader2,
     Map as MapIcon,
     MapPin,
-    Navigation,
     RefreshCw,
     Users,
-    WifiOff,
     X,
     XCircle
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 // ─── TIPOS ──────────────────────────────────────────────────────────────────
 type EmployeeLocation = {
@@ -27,11 +24,6 @@ type EmployeeLocation = {
   job_title: string; created_at?: string; gps_trust_score?: number; is_active?: boolean
 }
 
-type PedidoMarker = {
-  id: string; latitude: number; longitude: number; cliente_nombre: string
-  total_venta: number; fecha: string; empleado_nombre: string
-  estado: string; numero_documento: string
-}
 
 // ─── PARSER WKB/GeoJSON ──────────────────────────────────────────────────────
 function parseWKBHex(wkbHex: string): { latitude: number; longitude: number } | null {
@@ -94,7 +86,6 @@ export default function EmployeesMapPage() {
 
   // ── Datos
   const [locations, setLocations] = useState<EmployeeLocation[]>([])
-  const [pedidos, setPedidos] = useState<PedidoMarker[]>([])
   const [employees, setEmployees] = useState<{ id: string; full_name: string }[]>([])
 
   // ── Carga
@@ -114,7 +105,6 @@ export default function EmployeesMapPage() {
   const [filterDateTo, setFilterDateTo] = useState<string>(todayStr())
 
   // ── Capas del mapa
-  const [showPedidos, setShowPedidos] = useState(true)
   const [showEmployees, setShowEmployees] = useState(true)
   const [showVisits, setShowVisits] = useState(true)
 
@@ -122,8 +112,6 @@ export default function EmployeesMapPage() {
   const [selectedVisit, setSelectedVisit] = useState<any | null>(null)
   const [showVisitModal, setShowVisitModal] = useState(false)
   const [visits, setVisits] = useState<any[]>([])
-  const [selectedPedido, setSelectedPedido] = useState<PedidoMarker | null>(null)
-  const [showPedidoModal, setShowPedidoModal] = useState(false)
 
   // ─── INIT: empleado actual ──────────────────────────────────────────────────
   useEffect(() => {
@@ -175,41 +163,10 @@ export default function EmployeesMapPage() {
         setLocations(processed)
       }
 
-      // Pedidos con ubicación — filtro de fechas
-      try {
-        let q = supabase.from('pedidos')
-          .select(`id, numero_documento, fecha_pedido, total_venta, estado, empleado_id,
-            ubicacion_venta, clients:clients_id (name), employees:empleado_id (full_name)`)
-          .not('ubicacion_venta', 'is', null)
-          .gte('fecha_pedido', filterDateFrom)
-          .lte('fecha_pedido', filterDateTo + 'T23:59:59')
-          .order('fecha_pedido', { ascending: false }).limit(200)
-        if (filterEmployee !== 'ALL') q = q.eq('empleado_id', filterEmployee)
-        const { data: pData } = await q
-        if (pData) {
-          const markers: PedidoMarker[] = []
-          for (const p of pData) {
-            const { latitude, longitude } = parseLocation((p as any).ubicacion_venta)
-            if (latitude && longitude && !isNaN(latitude) && !isNaN(longitude)) {
-              markers.push({
-                id: p.id, latitude, longitude,
-                cliente_nombre: (p as any).clients?.name || 'Sin cliente',
-                total_venta: p.total_venta || 0,
-                fecha: new Date(p.fecha_pedido).toLocaleDateString('es-BO'),
-                empleado_nombre: (p as any).employees?.full_name || 'Sin empleado',
-                estado: p.estado || 'Pendiente',
-                numero_documento: p.numero_documento || p.id.slice(0, 8)
-              })
-            }
-          }
-          setPedidos(markers)
-        }
-      } catch { /* silencioso */ }
-
       // Visitas — filtro de fechas
       try {
         let q = supabase.from('visits')
-          .select('*, clients:client_id (name, legacy_id), employees:seller_id (full_name), check_in_location, check_out_location')
+          .select('*, clients:client_id (name, legacy_id, code), employees:seller_id (full_name), check_in_location, check_out_location')
           .or('check_in_location.not.is.null,check_out_location.not.is.null')
           .neq('outcome', 'pending')
           .gte('start_time', filterDateFrom)
@@ -279,7 +236,7 @@ export default function EmployeesMapPage() {
                 Mapa en Tiempo Real
               </h1>
               <p className="text-gray-500 text-xs font-medium">
-                {validLocations.length} empleados · {pedidos.length} pedidos · {visits.length} visitas
+                {validLocations.length} empleados · {visits.length} visitas
               </p>
             </div>
           </div>
@@ -354,7 +311,6 @@ export default function EmployeesMapPage() {
             {[
               { key: 'emp', label: `Empleados (${validLocations.length})`, state: showEmployees, set: setShowEmployees },
               { key: 'vis', label: `Visitas (${visits.length})`, state: showVisits, set: setShowVisits },
-              { key: 'ped', label: `Pedidos (${pedidos.length})`, state: showPedidos, set: setShowPedidos },
             ].map(layer => (
               <button key={layer.key} onClick={() => layer.set(!layer.state)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all ${layer.state ? 'bg-gray-900 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
@@ -386,10 +342,9 @@ export default function EmployeesMapPage() {
               <h2 className="text-lg font-black text-gray-900">Mapa Interactivo</h2>
               <p className="text-xs text-gray-500 font-medium">
                 {[
-                showEmployees && `${validLocations.length} empleados`,
-                showVisits && `${visits.length} visitas`,
-                showPedidos && `${pedidos.length} pedidos`,
-              ].filter(Boolean).join(' · ') || 'Sin filtros activos'}
+              showEmployees && `${validLocations.length} empleados`,
+              showVisits && `${visits.length} visitas`,
+            ].filter(Boolean).join(' · ') || 'Sin filtros activos'}
               </p>
             </div>
           </div>
@@ -398,10 +353,10 @@ export default function EmployeesMapPage() {
               employees={mapEmployees}
               selectedEmployeeId={selectedEmployeeId}
               visits={showVisits ? visits : []}
-              pedidos={showPedidos ? pedidos : []}
+              pedidos={[]}
               routePoints={[]}
               onVisitClick={(v) => { setSelectedVisit(v); setShowVisitModal(true) }}
-              onPedidoClick={(p: PedidoMarker) => { setSelectedPedido(p); setShowPedidoModal(true) }}
+              onPedidoClick={() => {}}
               creatingRoutePoint={false}
               onNewRoutePoint={() => {}}
               clients={[]}
@@ -411,52 +366,6 @@ export default function EmployeesMapPage() {
         </div>
 
       </div>
-
-      {/* ── MODAL PEDIDO ── */}
-      {showPedidoModal && selectedPedido && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full">
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200 rounded-t-3xl flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Pedido #{selectedPedido.numero_documento}</h2>
-              <button onClick={() => setShowPedidoModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-all">
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 p-3 rounded-2xl col-span-2">
-                  <p className="text-xs text-gray-500 mb-0.5">Cliente</p>
-                  <p className="font-bold text-gray-900">{selectedPedido.cliente_nombre}</p>
-                </div>
-                <div className="bg-gray-50 p-3 rounded-2xl">
-                  <p className="text-xs text-gray-500 mb-0.5">Vendedor</p>
-                  <p className="font-bold text-gray-900 text-sm">{selectedPedido.empleado_nombre}</p>
-                </div>
-                <div className="bg-gray-50 p-3 rounded-2xl">
-                  <p className="text-xs text-gray-500 mb-0.5">Fecha</p>
-                  <p className="font-bold text-gray-900 text-sm">{selectedPedido.fecha}</p>
-                </div>
-                <div className="bg-green-50 border border-green-200 p-3 rounded-2xl">
-                  <p className="text-xs text-gray-500 mb-0.5">Total</p>
-                  <p className="font-black text-green-700 text-xl">
-                    {new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(selectedPedido.total_venta)}
-                  </p>
-                </div>
-                <div className="bg-gray-50 p-3 rounded-2xl">
-                  <p className="text-xs text-gray-500 mb-0.5">Estado</p>
-                  <p className="font-bold text-sm">{selectedPedido.estado}</p>
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <button onClick={() => setShowPedidoModal(false)}
-                  className="px-5 py-2.5 bg-green-600 text-white rounded-2xl font-bold text-sm hover:bg-green-700 transition-all">
-                  Cerrar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── MODAL VISITA ── */}
       {showVisitModal && selectedVisit && (
@@ -477,8 +386,8 @@ export default function EmployeesMapPage() {
                 <div className="bg-gray-50 p-3 rounded-2xl col-span-2">
                   <p className="text-xs text-gray-500 mb-0.5">Cliente</p>
                   <p className="font-bold text-gray-900">{selectedVisit.clients?.name || 'N/A'}</p>
-                  {selectedVisit.clients?.legacy_id && (
-                    <p className="text-xs text-gray-400 mt-0.5">Código: {selectedVisit.clients.legacy_id}</p>
+                  {(selectedVisit.clients?.code || selectedVisit.clients?.legacy_id) && (
+                    <p className="text-xs text-gray-400 mt-0.5">Código: {selectedVisit.clients.code || selectedVisit.clients.legacy_id}</p>
                   )}
                 </div>
 

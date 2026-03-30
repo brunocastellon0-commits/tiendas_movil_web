@@ -116,7 +116,7 @@ const createEmployeeIcon = (fullName: string, score: number, isActive: boolean) 
 }
 
 const createVisitIcon = (outcome: string) => {
-  // ✅ El móvil usa 'closed', registros antiguos pueden tener 'store_closed'
+  // compatible con 'closed' (móvil) y 'store_closed' (legado)
   const normalizedOutcome = outcome === 'closed' ? 'store_closed' : outcome
   const colors: Record<string, [string, string]> = {
     sale:         ['#16a34a', '#bbf7d0'],
@@ -124,34 +124,20 @@ const createVisitIcon = (outcome: string) => {
     store_closed: ['#dc2626', '#fee2e2'],
   }
   const [border, bg] = colors[normalizedOutcome] || ['#6b7280', '#f3f4f6']
-  const symbols: Record<string, string> = {
-    sale: '💰', no_sale: '✗', store_closed: '🔒'
-  }
-  const sym = symbols[normalizedOutcome] || '?'
-  return L.divIcon({
-    className: '',
-    html: `<div style="position:relative">
-      <div style="width:38px;height:38px;background:${bg};border-radius:50%;border:3px solid ${border};box-shadow:0 3px 10px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;font-size:15px">${sym}</div>
-      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${border}"></div>
-    </div>`,
-    iconSize: [38, 46],
-    iconAnchor: [19, 46],
-    popupAnchor: [0, -48]
-  })
-}
 
-const createPedidoIcon = (estado: string, empleadoInicial: string) => {
-  const isCompleted = estado === 'Completado' || estado === 'Entregado'
-  const bg = isCompleted ? '#1d4ed8' : '#6d28d9'
-  const light = isCompleted ? '#dbeafe' : '#ede9fe'
+  // Iconos SVG inline por outcome
+  const svgIcons: Record<string, string> = {
+    sale: `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+    no_sale: `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+    store_closed: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+  }
+  const svg = svgIcons[normalizedOutcome] || `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+
   return L.divIcon({
     className: '',
     html: `<div style="position:relative">
-      <div style="width:38px;height:38px;background:${light};border-radius:50%;border:3px solid ${bg};box-shadow:0 3px 10px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center">
-        <span style="color:${bg};font-weight:900;font-size:13px;font-family:sans-serif">${empleadoInicial}</span>
-      </div>
-      <div style="position:absolute;-top:-4px;left:50%;transform:translateX(-50%) translateY(-50%);font-size:10px">🛒</div>
-      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${bg}"></div>
+      <div style="width:38px;height:38px;background:${bg};border-radius:50%;border:3px solid ${border};box-shadow:0 3px 10px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center">${svg}</div>
+      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${border}"></div>
     </div>`,
     iconSize: [38, 46],
     iconAnchor: [19, 46],
@@ -234,9 +220,8 @@ function LeafletMap({
   )
 
   const getOutcomeLabel = (o: string) => {
-    // ✅ compatible con outcome 'closed' (móvil) y 'store_closed' (legado)
     const normalized = o === 'closed' ? 'store_closed' : o
-    return ({ sale: '💰 Venta Exitosa', no_sale: '✗ Sin Venta', store_closed: '🔒 Tienda Cerrada' })[normalized] || o
+    return ({ sale: 'Venta Exitosa', no_sale: 'Sin Venta', store_closed: 'Tienda Cerrada' })[normalized] || o
   }
 
   return (
@@ -249,7 +234,7 @@ function LeafletMap({
           borderRadius: 20, fontSize: 13, fontWeight: 700, boxShadow: '0 4px 12px rgba(79,70,229,0.4)',
           pointerEvents: 'none'
         }}>
-          📍 Haz clic en el mapa para colocar un punto de ruta
+          Haz clic en el mapa para colocar un punto de ruta
         </div>
       )}
 
@@ -279,7 +264,7 @@ function LeafletMap({
                     <div>Estado: <b style={{ color: emp.is_active ? '#16a34a' : '#9ca3af' }}>{emp.is_active ? '● En línea' : '○ Desconectado'}</b></div>
                     <div>GPS Score: <b>{emp.gps_trust_score ?? 100}%</b></div>
                     <div style={{ fontFamily: 'monospace', fontSize: 10 }}>{emp.latitude.toFixed(6)}, {emp.longitude.toFixed(6)}</div>
-                    <div>🕒 {emp.last_update}</div>
+                    <div>Actualizado: {emp.last_update}</div>
                   </div>
                 </div>
               </Popup>
@@ -298,7 +283,7 @@ function LeafletMap({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                     <div>
                       <b style={{ fontSize: 14 }}>{visit.clients?.name || 'Visita'}</b>
-                      {visit.clients?.legacy_id && <div style={{ fontSize: 10, color: '#9ca3af' }}>Cód: {visit.clients.legacy_id}</div>}
+                      {(visit.clients?.code || visit.clients?.legacy_id) && <div style={{ fontSize: 10, color: '#9ca3af' }}>Cód: {visit.clients.code || visit.clients.legacy_id}</div>}
                     </div>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: visit.outcome === 'sale' ? '#dcfce7' : visit.outcome === 'no_sale' ? '#fef9c3' : '#fee2e2', color: visit.outcome === 'sale' ? '#166534' : visit.outcome === 'no_sale' ? '#713f12' : '#991b1b' }}>
                       {getOutcomeLabel(visit.outcome)}
@@ -319,39 +304,7 @@ function LeafletMap({
             </Marker>
           ))}
 
-          {/* ── MARCADORES DE PEDIDOS ── */}
-          {pedidos.map(p => (
-            <Marker
-              key={`pedido-${p.id}`}
-              position={[p.latitude, p.longitude]}
-              icon={createPedidoIcon(p.estado, p.empleado_nombre.charAt(0))}
-            >
-              <Popup>
-                <div style={{ minWidth: 220, padding: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                    <span style={{ fontSize: 18 }}>🛒</span>
-                    <div>
-                      <b style={{ fontSize: 14 }}>Pedido #{p.numero_documento}</b>
-                      <div style={{ fontSize: 10, color: '#6b7280' }}>{p.fecha}</div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 11, color: '#374151' }}>
-                    <div>Cliente: <b>{p.cliente_nombre}</b></div>
-                    <div>Vendedor: <b>{p.empleado_nombre}</b></div>
-                    <div>Total: <b style={{ color: '#1d4ed8' }}>Bs. {p.total_venta.toFixed(2)}</b></div>
-                    <div>Estado: <span style={{ fontWeight: 700 }}>{p.estado}</span></div>
-                  </div>
-                  {onPedidoClick && (
-                    <button
-                      onClick={() => onPedidoClick(p)}
-                      style={{ marginTop: 8, width: '100%', padding: '6px 0', background: '#16a34a', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
-                      Ver Detalle
-                    </button>
-                  )}
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+          {/* Pedidos: no se renderizan, solo visitas en el mapa */}
 
           {/* ── PUNTOS DE RUTA ── */}
           {routePoints.map(rp => (
@@ -363,7 +316,7 @@ function LeafletMap({
               <Popup>
                 <div style={{ minWidth: 230, padding: 6 }}>
                   <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 4 }}>
-                    {rp.client_id ? `🏪 ${rp.client_name || 'Cliente asignado'}` : `📍 Punto de Ruta`}
+                    {rp.client_id ? (rp.client_name || 'Cliente asignado') : 'Punto de Ruta'}
                   </div>
                   {rp.label && <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>{rp.label}</div>}
                   {rp.vendor_name && <div style={{ fontSize: 11 }}>Preventista: <b>{rp.vendor_name}</b></div>}
@@ -394,7 +347,7 @@ function LeafletMap({
 
                   {rp.client_id && (
                     <div style={{ marginTop: 6, padding: '4px 8px', background: '#f0fdf4', borderRadius: 8, fontSize: 11, color: '#166534', fontWeight: 700 }}>
-                      ✓ Cliente: {rp.client_name}
+                      Cliente: {rp.client_name}
                     </div>
                   )}
 
