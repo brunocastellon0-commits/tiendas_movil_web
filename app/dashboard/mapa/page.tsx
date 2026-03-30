@@ -5,23 +5,19 @@ import { shareMyLocation } from '@/services/locationService'
 import { createClient } from '@/utils/supabase/client'
 import {
     AlertCircle,
-    Bell,
-    BellOff,
+    CalendarDays,
     Check,
+    CheckCircle2,
     ChevronDown, ChevronUp,
-    Eye,
-    FileText,
     Loader2,
     Map as MapIcon,
     MapPin,
     Navigation,
     RefreshCw,
-    Search,
-    ShoppingBag,
     Users,
-    Wifi,
     WifiOff,
-    X
+    X,
+    XCircle
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -35,15 +31,6 @@ type PedidoMarker = {
   id: string; latitude: number; longitude: number; cliente_nombre: string
   total_venta: number; fecha: string; empleado_nombre: string
   estado: string; numero_documento: string
-}
-
-type MapAlert = {
-  id: string
-  employee_id: string
-  employee_name: string
-  event_type: 'enabled' | 'disabled' | 'location_update'
-  timestamp: string
-  reason?: string | null
 }
 
 // ─── PARSER WKB/GeoJSON ──────────────────────────────────────────────────────
@@ -77,31 +64,28 @@ function parseLocation(loc: any): { latitude: number | null; longitude: number |
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
-function getAlertLabel(alert: MapAlert): { icon: React.ReactNode; text: string; color: string } {
-  if (alert.event_type === 'enabled') return {
-    icon: <Navigation className="w-3.5 h-3.5" />,
-    text: `${alert.employee_name} activó el GPS`,
-    color: 'bg-green-50 border-green-300 text-green-800'
-  }
-  if (alert.event_type === 'disabled') return {
-    icon: <WifiOff className="w-3.5 h-3.5" />,
-    text: `${alert.employee_name} desactivó el GPS${alert.reason ? ` (${alert.reason})` : ''}`,
-    color: 'bg-red-50 border-red-300 text-red-800'
-  }
-  return {
-    icon: <MapPin className="w-3.5 h-3.5" />,
-    text: `${alert.employee_name} actualizó su ubicación`,
-    color: 'bg-blue-50 border-blue-300 text-blue-800'
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds < 0) return '0 seg'
+  if (seconds < 60) return `${seconds} seg`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  if (m < 60) return s > 0 ? `${m} min ${s} seg` : `${m} min`
+  const h = Math.floor(m / 60)
+  const rem = m % 60
+  return rem > 0 ? `${h}h ${rem} min` : `${h}h`
+}
+
+function outcomeLabel(outcome: string): { icon: React.ReactNode; label: string; color: string } {
+  switch (outcome) {
+    case 'sale': return { icon: <CheckCircle2 className="w-4 h-4" />, label: 'Venta', color: 'text-green-700 bg-green-50 border-green-200' }
+    case 'no_sale': return { icon: <XCircle className="w-4 h-4" />, label: 'Sin Venta', color: 'text-red-700 bg-red-50 border-red-200' }
+    default: return { icon: null, label: outcome || 'N/A', color: 'text-gray-700 bg-gray-50 border-gray-200' }
   }
 }
 
-function timeAgo(ts: string) {
-  const diffMins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000)
-  if (diffMins < 1) return 'Ahora mismo'
-  if (diffMins < 60) return `Hace ${diffMins} min`
-  const h = Math.floor(diffMins / 60)
-  if (h < 24) return `Hace ${h}h`
-  return new Date(ts).toLocaleDateString()
+// Default: today
+function todayStr() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 // ─── COMPONENTE PRINCIPAL ────────────────────────────────────────────────────
@@ -112,12 +96,6 @@ export default function EmployeesMapPage() {
   const [locations, setLocations] = useState<EmployeeLocation[]>([])
   const [pedidos, setPedidos] = useState<PedidoMarker[]>([])
   const [employees, setEmployees] = useState<{ id: string; full_name: string }[]>([])
-
-  // ── Alertas en tiempo real
-  const [alerts, setAlerts] = useState<MapAlert[]>([])
-  const [showAlerts, setShowAlerts] = useState(true)
-  const alertsRef = useRef<MapAlert[]>([])
-  alertsRef.current = alerts
 
   // ── Carga
   const [loadingMap, setLoadingMap] = useState(true)
@@ -132,17 +110,13 @@ export default function EmployeesMapPage() {
 
   // ── Filtros
   const [filterEmployee, setFilterEmployee] = useState<string>('ALL')
+  const [filterDateFrom, setFilterDateFrom] = useState<string>(todayStr())
+  const [filterDateTo, setFilterDateTo] = useState<string>(todayStr())
 
   // ── Capas del mapa
   const [showPedidos, setShowPedidos] = useState(true)
   const [showEmployees, setShowEmployees] = useState(true)
   const [showVisits, setShowVisits] = useState(true)
-
-  // ── Paneles
-  const [showEmployeeList, setShowEmployeeList] = useState(false)
-  const [showPedidoList, setShowPedidoList] = useState(false)
-  const PEDIDO_PAGE_SIZE = 20
-  const [pedidoPage, setPedidoPage] = useState(1)
 
   // ── Modales
   const [selectedVisit, setSelectedVisit] = useState<any | null>(null)
@@ -201,13 +175,15 @@ export default function EmployeesMapPage() {
         setLocations(processed)
       }
 
-      // Pedidos con ubicación
+      // Pedidos con ubicación — filtro de fechas
       try {
         let q = supabase.from('pedidos')
           .select(`id, numero_documento, fecha_pedido, total_venta, estado, empleado_id,
             ubicacion_venta, clients:clients_id (name), employees:empleado_id (full_name)`)
           .not('ubicacion_venta', 'is', null)
-          .order('fecha_pedido', { ascending: false }).limit(100)
+          .gte('fecha_pedido', filterDateFrom)
+          .lte('fecha_pedido', filterDateTo + 'T23:59:59')
+          .order('fecha_pedido', { ascending: false }).limit(200)
         if (filterEmployee !== 'ALL') q = q.eq('empleado_id', filterEmployee)
         const { data: pData } = await q
         if (pData) {
@@ -230,13 +206,15 @@ export default function EmployeesMapPage() {
         }
       } catch { /* silencioso */ }
 
-      // Visitas
+      // Visitas — filtro de fechas
       try {
         let q = supabase.from('visits')
           .select('*, clients:client_id (name, legacy_id), employees:seller_id (full_name), check_in_location, check_out_location')
           .or('check_in_location.not.is.null,check_out_location.not.is.null')
           .neq('outcome', 'pending')
-          .order('start_time', { ascending: false }).limit(200)
+          .gte('start_time', filterDateFrom)
+          .lte('start_time', filterDateTo + 'T23:59:59')
+          .order('start_time', { ascending: false }).limit(500)
         if (filterEmployee !== 'ALL') q = q.eq('seller_id', filterEmployee)
         const { data: vData } = await q
         if (vData) setVisits(vData)
@@ -249,100 +227,7 @@ export default function EmployeesMapPage() {
     }
   }
 
-  useEffect(() => { fetchMapBase() }, [filterEmployee])
-
-  // ─── Cargar alertas iniciales ────────────────────────────────────────────
-  const loadInitialAlerts = async () => {
-    try {
-      const { data } = await supabase
-        .from('location_events')
-        .select('id, employee_id, event_type, reason, timestamp, employees:employee_id (full_name)')
-        .order('timestamp', { ascending: false })
-        .limit(20)
-      if (data) {
-        const mapped: MapAlert[] = data.map((e: any) => ({
-          id: e.id,
-          employee_id: e.employee_id,
-          employee_name: e.employees?.full_name || 'Empleado',
-          event_type: e.event_type as 'enabled' | 'disabled',
-          timestamp: e.timestamp,
-          reason: e.reason,
-        }))
-        setAlerts(mapped)
-      }
-    } catch { /* silencioso */ }
-  }
-
-  // ─── Suscripción Realtime a location_events ─────────────────────────────
-  useEffect(() => {
-    loadInitialAlerts()
-
-    // Suscripción a nuevos eventos GPS
-    const eventsChannel = supabase
-      .channel('location-events-realtime')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'location_events'
-      }, async (payload) => {
-        const ev = payload.new as any
-        // Fetch employee name
-        const { data: emp } = await supabase
-          .from('employees')
-          .select('full_name')
-          .eq('id', ev.employee_id)
-          .single()
-        const newAlert: MapAlert = {
-          id: ev.id,
-          employee_id: ev.employee_id,
-          employee_name: emp?.full_name || 'Empleado',
-          event_type: ev.event_type as 'enabled' | 'disabled',
-          timestamp: ev.timestamp || ev.created_at,
-          reason: ev.reason,
-        }
-        setAlerts(prev => [newAlert, ...prev].slice(0, 30))
-      })
-      .subscribe()
-
-    // Suscripción a actualizaciones de ubicación (location_history)
-    const histChannel = supabase
-      .channel('location-history-realtime')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'location_history'
-      }, async (payload) => {
-        const ev = payload.new as any
-        const { data: emp } = await supabase
-          .from('employees')
-          .select('full_name')
-          .eq('id', ev.employee_id)
-          .single()
-        const locAlert: MapAlert = {
-          id: ev.id,
-          employee_id: ev.employee_id,
-          employee_name: emp?.full_name || 'Empleado',
-          event_type: 'location_update',
-          timestamp: ev.timestamp || ev.created_at,
-        }
-        // Only add location_update alerts — avoid flood: skip if same employee updated < 2 min ago
-        const recent = alertsRef.current.find(
-          a => a.employee_id === ev.employee_id && a.event_type === 'location_update' &&
-          (Date.now() - new Date(a.timestamp).getTime()) < 120000
-        )
-        if (!recent) {
-          setAlerts(prev => [locAlert, ...prev].slice(0, 30))
-        }
-        // Also refresh map base to move the marker
-        fetchMapBase()
-      })
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(eventsChannel)
-      supabase.removeChannel(histChannel)
-    }
-  }, [])
+  useEffect(() => { fetchMapBase() }, [filterEmployee, filterDateFrom, filterDateTo])
 
   // ─── Compartir ubicación ──────────────────────────────────────────────────
   const handleShareLocation = async () => {
@@ -374,6 +259,8 @@ export default function EmployeesMapPage() {
     last_update: getRelativeTime(emp.created_at)
   })) : []
 
+  const hasActiveFilters = filterEmployee !== 'ALL' || filterDateFrom !== todayStr() || filterDateTo !== todayStr()
+
   // ─── UI ───────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6">
@@ -399,8 +286,8 @@ export default function EmployeesMapPage() {
           <div className="flex gap-2">
             <button onClick={handleShareLocation} disabled={sharingLocation || !currentEmployeeId}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-sm transition-all shadow ${sharingLocation || !currentEmployeeId ? 'bg-gray-300 cursor-not-allowed text-white' : shareSuccess ? 'bg-green-500 text-white' : 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:scale-105 text-white'}`}>
-              {sharingLocation ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-              {sharingLocation ? 'Compartiendo...' : shareSuccess ? '✓' : 'Mi Ubicación'}
+              {sharingLocation ? <Loader2 className="w-4 h-4 animate-spin" /> : shareSuccess ? <Check className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
+              {sharingLocation ? 'Compartiendo...' : shareSuccess ? 'Listo' : 'Mi Ubicación'}
             </button>
             <button onClick={fetchMapBase} disabled={loadingMap}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-sm transition-all shadow ${loadingMap ? 'bg-gray-300 cursor-not-allowed text-white' : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:scale-105 text-white'}`}>
@@ -417,65 +304,9 @@ export default function EmployeesMapPage() {
           </div>
         )}
 
-        {/* ── PANEL DE ALERTAS EN TIEMPO REAL ── */}
-        <div className="bg-white rounded-3xl shadow-lg border-2 border-amber-100 overflow-hidden">
-          <button
-            onClick={() => setShowAlerts(!showAlerts)}
-            className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-amber-50 transition-all"
-          >
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-amber-100 rounded-xl">
-                <Bell className="w-4 h-4 text-amber-600" />
-              </div>
-              <span className="font-black text-gray-900 text-sm">Alertas en Tiempo Real</span>
-              {alerts.length > 0 && (
-                <span className="bg-amber-500 text-white text-xs font-black px-2 py-0.5 rounded-full animate-pulse">
-                  {alerts.length}
-                </span>
-              )}
-              <span className="text-xs text-gray-400 font-medium">Actividad GPS de empleados</span>
-            </div>
-            {showAlerts ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-          </button>
-          {showAlerts && (
-            <div className="px-4 pb-4">
-              {alerts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 gap-2 text-gray-400">
-                  <BellOff className="w-8 h-8 opacity-40" />
-                  <p className="text-sm font-medium">Sin actividad reciente</p>
-                  <p className="text-xs">Las alertas aparecerán aquí cuando los empleados actualicen su GPS</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5 max-h-52 overflow-y-auto">
-                  {alerts.map(alert => {
-                    const { icon, text, color } = getAlertLabel(alert)
-                    return (
-                      <div key={alert.id} className={`flex items-start gap-2.5 px-3 py-2 rounded-xl border text-sm ${color}`}>
-                        <div className="flex-shrink-0 mt-0.5">{icon}</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold truncate">{text}</p>
-                        </div>
-                        <span className="text-[11px] font-medium opacity-60 flex-shrink-0 mt-0.5">{timeAgo(alert.timestamp)}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              <div className="flex justify-end mt-2">
-                <button
-                  onClick={() => setAlerts([])}
-                  className="text-xs text-gray-400 hover:text-red-500 font-bold transition-colors"
-                >
-                  Limpiar alertas
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* ── FILTROS ── */}
         <div className="bg-white p-4 rounded-3xl shadow-lg border-2 border-green-100">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
             {/* Preventista */}
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1">
@@ -486,6 +317,34 @@ export default function EmployeesMapPage() {
                 <option value="ALL">Todos los Vendedores</option>
                 {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
               </select>
+            </div>
+
+            {/* Fecha Desde */}
+            <div>
+              <label className="block text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1">
+                <CalendarDays className="w-3.5 h-3.5" /> Desde
+              </label>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={e => setFilterDateFrom(e.target.value)}
+                max={filterDateTo}
+                className="w-full px-3 py-2.5 text-sm text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 font-medium"
+              />
+            </div>
+
+            {/* Fecha Hasta */}
+            <div>
+              <label className="block text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1">
+                <CalendarDays className="w-3.5 h-3.5" /> Hasta
+              </label>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={e => setFilterDateTo(e.target.value)}
+                min={filterDateFrom}
+                className="w-full px-3 py-2.5 text-sm text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 font-medium"
+              />
             </div>
           </div>
 
@@ -503,12 +362,12 @@ export default function EmployeesMapPage() {
                 {layer.label}
               </button>
             ))}
-            {filterEmployee !== 'ALL' && (
+            {hasActiveFilters && (
               <button
-                onClick={() => setFilterEmployee('ALL')}
-                className="ml-auto text-xs text-red-500 hover:underline font-bold self-center"
+                onClick={() => { setFilterEmployee('ALL'); setFilterDateFrom(todayStr()); setFilterDateTo(todayStr()) }}
+                className="ml-auto flex items-center gap-1 text-xs text-red-500 hover:underline font-bold self-center"
               >
-                ✕ Limpiar filtros
+                <X className="w-3 h-3" /> Limpiar filtros
               </button>
             )}
           </div>
@@ -551,119 +410,6 @@ export default function EmployeesMapPage() {
           </div>
         </div>
 
-        {/* ── LISTA DE EMPLEADOS (colapsable) ── */}
-        {validLocations.length > 0 && (
-          <div className="bg-white rounded-3xl shadow border-2 border-green-100 overflow-hidden">
-            <button
-              onClick={() => setShowEmployeeList(!showEmployeeList)}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-green-50 transition-all"
-            >
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-green-600" />
-                <span className="font-black text-gray-900 text-sm">Personal en Ruta</span>
-                <span className="bg-green-100 text-green-700 text-xs font-black px-2 py-0.5 rounded-full">
-                  {validLocations.filter(e => e.is_active).length} activos / {validLocations.length}
-                </span>
-              </div>
-              {showEmployeeList ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-            </button>
-            {showEmployeeList && (
-              <div className="px-5 pb-5">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                  {validLocations.map(emp => (
-                    <div key={emp.id} onClick={() => setSelectedEmployeeId(emp.id)}
-                      className={`p-3 rounded-2xl border-2 flex items-center gap-2.5 hover:shadow cursor-pointer transition-all ${emp.is_active ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'} ${selectedEmployeeId === emp.id ? 'ring-2 ring-blue-400 border-blue-400' : ''}`}>
-                      <div className="relative flex-shrink-0">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shadow ${(emp.gps_trust_score || 100) < 70 ? 'bg-red-500 text-white' : 'bg-gradient-to-br from-blue-400 to-indigo-500 text-white'}`}>
-                          {emp.full_name.charAt(0)}
-                        </div>
-                        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-white rounded-full ${emp.is_active ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-gray-900 text-xs truncate">{emp.full_name}</p>
-                        <p className={`text-[10px] font-bold ${emp.is_active ? 'text-green-600' : 'text-gray-400'}`}>
-                          {getRelativeTime(emp.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── LISTA DE PEDIDOS (colapsable) ── */}
-        {pedidos.length > 0 && (
-          <div className="bg-white rounded-3xl shadow border-2 border-green-100 overflow-hidden">
-            <button
-              onClick={() => { setShowPedidoList(!showPedidoList); setPedidoPage(1) }}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-green-50 transition-all"
-            >
-              <div className="flex items-center gap-2">
-                <ShoppingBag className="w-4 h-4 text-green-600" />
-                <span className="font-black text-gray-900 text-sm">Pedidos en el Mapa</span>
-                <span className="bg-green-100 text-green-700 text-xs font-black px-2 py-0.5 rounded-full">
-                  {pedidos.length} pedidos
-                </span>
-              </div>
-              {showPedidoList ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-            </button>
-            {showPedidoList && (() => {
-              const totalPedidoPages = Math.ceil(pedidos.length / PEDIDO_PAGE_SIZE)
-              const paged = pedidos.slice((pedidoPage - 1) * PEDIDO_PAGE_SIZE, pedidoPage * PEDIDO_PAGE_SIZE)
-              return (
-                <div className="px-5 pb-5">
-                  <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-100 text-xs font-black text-gray-500 uppercase rounded-xl mb-2">
-                    <div className="col-span-2"># Doc</div>
-                    <div className="col-span-2">Fecha</div>
-                    <div className="col-span-3">Cliente</div>
-                    <div className="col-span-2">Vendedor</div>
-                    <div className="col-span-2 text-right">Total</div>
-                    <div className="col-span-1"></div>
-                  </div>
-                  <div className="space-y-1">
-                    {paged.map(p => (
-                      <div key={p.id}
-                        onClick={() => { setSelectedPedido(p); setShowPedidoModal(true) }}
-                        className="grid grid-cols-12 gap-2 px-3 py-2.5 bg-gray-50 hover:bg-green-50 rounded-xl border border-gray-200 cursor-pointer transition-all items-center text-sm">
-                        <div className="col-span-2 font-black text-gray-700 text-xs">#{p.numero_documento}</div>
-                        <div className="col-span-2 text-gray-500 text-xs">{p.fecha}</div>
-                        <div className="col-span-3 font-semibold text-gray-800 truncate text-xs">{p.cliente_nombre}</div>
-                        <div className="col-span-2 text-gray-500 truncate text-xs">{p.empleado_nombre}</div>
-                        <div className="col-span-2 font-black text-green-700 text-right text-xs">
-                          {new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(p.total_venta)}
-                        </div>
-                        <div className="col-span-1 flex justify-end">
-                          <Eye className="w-3.5 h-3.5 text-gray-400 hover:text-green-600" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {totalPedidoPages > 1 && (
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                      <p className="text-xs text-gray-500">
-                        {(pedidoPage - 1) * PEDIDO_PAGE_SIZE + 1}–{Math.min(pedidoPage * PEDIDO_PAGE_SIZE, pedidos.length)} de {pedidos.length}
-                      </p>
-                      <div className="flex gap-1">
-                        <button onClick={() => setPedidoPage(p => Math.max(1, p - 1))} disabled={pedidoPage === 1}
-                          className="px-3 py-1 text-xs border rounded-lg font-bold disabled:opacity-40 hover:bg-gray-100 transition-all">
-                          ‹ Ant
-                        </button>
-                        <span className="px-3 py-1 text-xs bg-green-600 text-white rounded-lg font-black">{pedidoPage}/{totalPedidoPages}</span>
-                        <button onClick={() => setPedidoPage(p => Math.min(totalPedidoPages, p + 1))} disabled={pedidoPage === totalPedidoPages}
-                          className="px-3 py-1 text-xs border rounded-lg font-bold disabled:opacity-40 hover:bg-gray-100 transition-all">
-                          Sig ›
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
-        )}
-
       </div>
 
       {/* ── MODAL PEDIDO ── */}
@@ -671,10 +417,7 @@ export default function EmployeesMapPage() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full">
             <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200 rounded-t-3xl flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShoppingBag className="w-5 h-5 text-green-600" />
-                <h2 className="text-lg font-bold text-gray-900">Pedido #{selectedPedido.numero_documento}</h2>
-              </div>
+              <h2 className="text-lg font-bold text-gray-900">Pedido #{selectedPedido.numero_documento}</h2>
               <button onClick={() => setShowPedidoModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-all">
                 <X className="w-5 h-5 text-gray-600" />
               </button>
@@ -701,20 +444,10 @@ export default function EmployeesMapPage() {
                 </div>
                 <div className="bg-gray-50 p-3 rounded-2xl">
                   <p className="text-xs text-gray-500 mb-0.5">Estado</p>
-                  <p className="font-bold text-sm">
-                    {selectedPedido.estado === 'Pendiente' ? 'Pendiente'
-                      : selectedPedido.estado === 'Aprobado' ? 'Aprobado'
-                      : selectedPedido.estado === 'Entregado' ? 'Entregado'
-                      : selectedPedido.estado === 'Completado' ? 'Completado'
-                      : selectedPedido.estado}
-                  </p>
+                  <p className="font-bold text-sm">{selectedPedido.estado}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 p-3 rounded-2xl text-xs text-blue-700">
-                <FileText className="w-4 h-4 flex-shrink-0" />
-                <span>Para ver el detalle completo, ve a <strong>Ventas</strong> y busca #{selectedPedido.numero_documento}</span>
-              </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end">
                 <button onClick={() => setShowPedidoModal(false)}
                   className="px-5 py-2.5 bg-green-600 text-white rounded-2xl font-bold text-sm hover:bg-green-700 transition-all">
                   Cerrar
@@ -739,28 +472,72 @@ export default function EmployeesMapPage() {
             </div>
             <div className="p-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 p-3 rounded-2xl">
+
+                {/* Cliente */}
+                <div className="bg-gray-50 p-3 rounded-2xl col-span-2">
                   <p className="text-xs text-gray-500 mb-0.5">Cliente</p>
-                  <p className="font-bold text-gray-900 text-sm">{selectedVisit.clients?.name || 'N/A'}</p>
+                  <p className="font-bold text-gray-900">{selectedVisit.clients?.name || 'N/A'}</p>
+                  {selectedVisit.clients?.legacy_id && (
+                    <p className="text-xs text-gray-400 mt-0.5">Código: {selectedVisit.clients.legacy_id}</p>
+                  )}
                 </div>
+
+                {/* Vendedor */}
                 <div className="bg-gray-50 p-3 rounded-2xl">
                   <p className="text-xs text-gray-500 mb-0.5">Vendedor</p>
                   <p className="font-bold text-gray-900 text-sm">{selectedVisit.employees?.full_name || 'N/A'}</p>
                 </div>
+
+                {/* Resultado */}
+                {(() => { const ol = outcomeLabel(selectedVisit.outcome); return (
+                  <div className={`p-3 rounded-2xl border ${ol.color}`}>
+                    <p className="text-xs opacity-70 mb-0.5">Resultado</p>
+                    <p className="font-bold text-sm flex items-center gap-1.5">{ol.icon}{ol.label}</p>
+                  </div>
+                ) })()}
+
+                {/* Entrada */}
                 <div className="bg-gray-50 p-3 rounded-2xl">
-                  <p className="text-xs text-gray-500 mb-0.5">Resultado</p>
-                  <p className="font-bold text-sm">{selectedVisit.outcome === 'sale' ? 'Venta' : selectedVisit.outcome === 'no_sale' ? 'Sin Venta' : 'Cerrado'}</p>
+                  <p className="text-xs text-gray-500 mb-0.5">Check-In</p>
+                  <p className="font-bold text-gray-900 text-sm">
+                    {selectedVisit.start_time ? new Date(selectedVisit.start_time).toLocaleString('es-BO') : 'N/A'}
+                  </p>
                 </div>
+
+                {/* Salida */}
                 <div className="bg-gray-50 p-3 rounded-2xl">
-                  <p className="text-xs text-gray-500 mb-0.5">Fecha</p>
-                  <p className="font-bold text-gray-900 text-sm">{selectedVisit.start_time ? new Date(selectedVisit.start_time).toLocaleString('es-BO') : 'N/A'}</p>
+                  <p className="text-xs text-gray-500 mb-0.5">Check-Out</p>
+                  <p className="font-bold text-gray-900 text-sm">
+                    {selectedVisit.end_time ? new Date(selectedVisit.end_time).toLocaleString('es-BO') : 'N/A'}
+                  </p>
                 </div>
+
+                {/* Duración */}
+                <div className="bg-blue-50 border border-blue-200 p-3 rounded-2xl">
+                  <p className="text-xs text-blue-500 mb-0.5">Duración</p>
+                  <p className="font-black text-blue-700 text-lg">
+                    {selectedVisit.duration_seconds != null ? formatDuration(selectedVisit.duration_seconds) : 'N/A'}
+                  </p>
+                </div>
+
+                {/* Precisión GPS */}
+                <div className="bg-gray-50 p-3 rounded-2xl">
+                  <p className="text-xs text-gray-500 mb-0.5">Precisión GPS</p>
+                  <p className="font-bold text-gray-900 text-sm">
+                    {selectedVisit.gps_accuracy_meters != null
+                      ? `${parseFloat(selectedVisit.gps_accuracy_meters).toFixed(1)} m`
+                      : 'N/A'}
+                  </p>
+                </div>
+
+                {/* Notas */}
                 {selectedVisit.notes && (
-                  <div className="bg-gray-50 p-3 rounded-2xl col-span-2">
-                    <p className="text-xs text-gray-500 mb-0.5">Notas</p>
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl col-span-2">
+                    <p className="text-xs text-amber-600 mb-0.5">Notas</p>
                     <p className="text-sm text-gray-800">{selectedVisit.notes}</p>
                   </div>
                 )}
+
               </div>
               <div className="flex justify-end">
                 <button onClick={() => setShowVisitModal(false)} className="px-5 py-2.5 bg-green-600 text-white rounded-2xl font-bold text-sm hover:bg-green-700">
