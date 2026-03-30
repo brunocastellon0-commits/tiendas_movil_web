@@ -16,15 +16,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Datos incompletos: se requiere cabecera y detalles' }, { status: 400 })
     }
 
+    // Asegurar numero_documento si viene vacío o undefined
+    const cabeceraFinal = {
+      ...cabecera,
+      numero_documento: cabecera.numero_documento || `APP-${Date.now()}`,
+    }
+
     // 1. Insertar la cabecera del pedido
     const { data: orderData, error: orderError } = await supabaseAdmin
       .from('pedidos')
-      .insert(cabecera)
+      .insert(cabeceraFinal)
       .select()
       .single()
 
     if (orderError) {
-      console.error('[API /pedidos/create] Error insertando cabecera:', orderError)
+      console.error('[API /pedidos/create] Error insertando cabecera:', JSON.stringify(orderError))
       return NextResponse.json({
         error: orderError.message,
         code: orderError.code,
@@ -39,6 +45,8 @@ export async function POST(req: NextRequest) {
       pedido_id: orderData.id,
     }))
 
+    console.log('[API /pedidos/create] Insertando detalles:', JSON.stringify(detallesConId))
+
     const { error: detallesError } = await supabaseAdmin
       .from('detalle_pedido')
       .insert(detallesConId)
@@ -46,7 +54,7 @@ export async function POST(req: NextRequest) {
     if (detallesError) {
       // Revertir: eliminar la cabecera si los detalles fallaron
       await supabaseAdmin.from('pedidos').delete().eq('id', orderData.id)
-      console.error('[API /pedidos/create] Error insertando detalles (cabecera revertida):', detallesError)
+      console.error('[API /pedidos/create] Error insertando detalles (cabecera revertida):', JSON.stringify(detallesError))
       return NextResponse.json({
         error: detallesError.message,
         code: detallesError.code,
@@ -55,6 +63,7 @@ export async function POST(req: NextRequest) {
       }, { status: 500 })
     }
 
+    console.log(`[API /pedidos/create] OK — pedido_id: ${orderData.id}, detalles: ${detallesConId.length}`)
     return NextResponse.json({ success: true, pedido_id: orderData.id, pedido: orderData })
 
   } catch (err: any) {

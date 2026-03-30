@@ -265,15 +265,37 @@ export default function VentasPage() {
     setEditLines([])
     setLoadingDetail(true)
     try {
-      const { data } = await supabase
+      // 1. Traer líneas de detalle (sin join FK que puede fallar)
+      const { data: detalles } = await supabase
         .from('detalle_pedido')
-        .select('id, producto_id, cantidad, precio_unitario, subtotal, unidad_seleccionada, factor_aplicado, productos:producto_id (codigo_producto, nombre_producto)')
+        .select('id, producto_id, cantidad, precio_unitario, subtotal, unidad_seleccionada, factor_aplicado')
         .eq('pedido_id', order.id)
         .order('created_at')
-      const rows = (data as any) || []
-      setRawDetail(rows)
-      // Convertir a líneas editables
-      setEditLines(rows.map((d: any): EditableLine => ({
+
+      const rows = (detalles as any[]) || []
+
+      // 2. Traer info de productos por sus IDs (query separada, sin depender de FK)
+      const productoIds = [...new Set(rows.map((r: any) => r.producto_id).filter(Boolean))]
+      let productoMap: Record<string, { codigo_producto: string; nombre_producto: string }> = {}
+
+      if (productoIds.length > 0) {
+        const { data: prods } = await supabase
+          .from('productos')
+          .select('id, codigo_producto, nombre_producto')
+          .in('id', productoIds)
+        if (prods) {
+          prods.forEach((p: any) => { productoMap[p.id] = { codigo_producto: p.codigo_producto, nombre_producto: p.nombre_producto } })
+        }
+      }
+
+      // 3. Combinar datos manualmente
+      const enrichedRows = rows.map((d: any) => ({
+        ...d,
+        productos: productoMap[d.producto_id] || null
+      }))
+
+      setRawDetail(enrichedRows)
+      setEditLines(enrichedRows.map((d: any): EditableLine => ({
         id: d.id,
         producto_id: d.producto_id,
         codigo_producto: d.productos?.codigo_producto || d.factor_aplicado || '—',
@@ -540,7 +562,7 @@ export default function VentasPage() {
                   onClick={() => openModal(o, 'detail')}
                   className="grid grid-cols-12 gap-2 p-4 hover:bg-green-50 transition-colors items-center text-sm cursor-pointer group">
                   <div className="col-span-1 font-black text-gray-800">#{o.numero_documento}</div>
-                  <div className="col-span-2 text-gray-500 text-xs">{format(new Date(o.fecha_pedido), 'dd/MM/yy HH:mm')}</div>
+                  <div className="col-span-2 text-gray-500 text-xs">{format(new Date(o.fecha_pedido.slice(0, 10) + 'T12:00:00'), 'dd/MM/yy')}</div>
                   <div className="col-span-3">
                     <p className="font-semibold text-gray-800 truncate">{o.clients?.name || <span className="text-red-400 italic">Sin cliente</span>}</p>
                     <div className="flex items-center gap-1 flex-wrap mt-0.5">
@@ -592,7 +614,7 @@ export default function VentasPage() {
                     <StatusBadge status={selectedOrder.estado} />
                   </div>
                   <p className="text-green-100 text-sm">
-                    {format(new Date(selectedOrder.fecha_pedido), "dd 'de' MMMM yyyy · HH:mm", { locale: es })}
+                    {format(new Date(selectedOrder.fecha_pedido.slice(0, 10) + 'T12:00:00'), "dd 'de' MMMM yyyy", { locale: es })}
                     {selectedOrder.employees?.full_name && ` · ${selectedOrder.employees.full_name}`}
                   </p>
                 </div>

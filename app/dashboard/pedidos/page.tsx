@@ -500,13 +500,32 @@ export default function OrdersPage() {
     }
     setLoadingDetails(true)
     try {
+      // 1. Líneas de detalle sin join FK
       const { data, error } = await supabase
         .from('detalle_pedido')
-        .select('id, producto_id, cantidad, precio_unitario, subtotal, unidad_seleccionada, factor_aplicado, productos:producto_id (codigo_producto, nombre_producto)')
+        .select('id, producto_id, cantidad, precio_unitario, subtotal, unidad_seleccionada, factor_aplicado')
         .eq('pedido_id', orderId)
         .order('created_at')
       if (error) throw error
-      setOrderDetails(prev => ({ ...prev, [orderId]: (data as any) || [] }))
+
+      const rows = (data as any[]) || []
+
+      // 2. Productos por IDs (sin FK)
+      const productoIds = [...new Set(rows.map((r: any) => r.producto_id).filter(Boolean))]
+      let productoMap: Record<string, { codigo_producto: string; nombre_producto: string }> = {}
+      if (productoIds.length > 0) {
+        const { data: prods } = await supabase
+          .from('productos')
+          .select('id, codigo_producto, nombre_producto')
+          .in('id', productoIds)
+        if (prods) {
+          prods.forEach((p: any) => { productoMap[p.id] = { codigo_producto: p.codigo_producto, nombre_producto: p.nombre_producto } })
+        }
+      }
+
+      // 3. Combinar manualmente
+      const enriched = rows.map((d: any) => ({ ...d, productos: productoMap[d.producto_id] || null }))
+      setOrderDetails(prev => ({ ...prev, [orderId]: enriched }))
       setExpandedOrderId(orderId)
     } catch (err) {
       console.error('Error cargando detalle:', err)

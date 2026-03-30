@@ -27,17 +27,7 @@ export async function GET() {
     // 1. Buscar pedidos atascados (Pendiente + sin legacy_id)
     const { data: pendingOrders, error } = await supabase
       .from('pedidos')
-      .select(`
-        *,
-        clients_id ( legacy_id ),
-        detalle_pedido (
-          producto_id,
-          cantidad,
-          precio_unitario,
-          unidad_seleccionada,
-          productos:producto_id ( codigo_producto, legacy_id )
-        )
-      `)
+      .select(`*, clients_id ( legacy_id ), detalle_pedido ( producto_id, cantidad, precio_unitario, unidad_seleccionada, factor_aplicado )`)
       .is('legacy_id', null)
       .eq('estado', 'Pendiente')
       .limit(10);
@@ -48,11 +38,39 @@ export async function GET() {
       return NextResponse.json({ message: 'No hay pedidos pendientes de sincronizar.' });
     }
 
-    // 2. Enviar a la Mini-API de la oficina para que los grabe en SQL Server
+    // 2. Enriquecer detalles con datos de productos (sin depender de FK)
+    const allProductoIds = [...new Set(
+      pendingOrders.flatMap((o: any) =>
+        (o.detalle_pedido || []).map((d: any) => d.producto_id).filter(Boolean)
+      )
+    )];
+
+    let productoMap: Record<string, { codigo_producto: string; legacy_id: number | null }> = {};
+    if (allProductoIds.length > 0) {
+      const { data: prods } = await supabase
+        .from('productos')
+        .select('id, codigo_producto, legacy_id')
+        .in('id', allProductoIds);
+      if (prods) {
+        prods.forEach((p: any) => { productoMap[p.id] = { codigo_producto: p.codigo_producto, legacy_id: p.legacy_id } });
+      }
+    }
+
+    // 3. Combinar detalles con info de productos
+    const enrichedOrders = pendingOrders.map((order: any) => ({
+      ...order,
+      detalle_pedido: (order.detalle_pedido || []).map((d: any) => ({
+        ...d,
+        productos: productoMap[d.producto_id] || null,
+      })),
+    }));
+
+
+    // 4. Enviar a la Mini-API de la oficina para que los grabe en SQL Server
     const pushResp = await fetch(`${API_OFICINA}/api/push-orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orders: pendingOrders }),
+      body: JSON.stringify({ orders: enrichedOrders }),
       cache: 'no-store'
     });
 
