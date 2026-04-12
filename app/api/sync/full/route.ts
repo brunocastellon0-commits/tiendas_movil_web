@@ -207,31 +207,51 @@ export async function GET() {
 
             // 5. Inserción de Detalles
             if (cabeceraGuardada && pedido.detalle_pedido?.length > 0) {
-              const detallesParaGuardar = pedido.detalle_pedido.map((det: any) => {
-                const productoSupabase = sbProducts.find((p: any) =>
-                  String(p.codigo_producto).trim() === String(det.codigo_producto).trim()
-                );
+              const detallesParaGuardar = pedido.detalle_pedido
+                .map((det: any) => {
+                  const productoSupabase = sbProducts.find((p: any) =>
+                    String(p.codigo_producto).trim() === String(det.codigo_producto).trim()
+                  );
 
-                const cant = Number(det.cantidad) || 0;
-                const prec = Number(det.precio_unitario) || 0;
-                const subtotal_calc = parseFloat((cant * prec).toFixed(2));
+                  // ⚠️ Si no hay match de producto, descartamos la fila
+                  // para evitar violaciones FK en campos NOT NULL
+                  if (!productoSupabase) return null;
 
-                return {
-                  pedido_id: cabeceraGuardada.id,
-                  // Si no hay match en catálogo, guardamos null pero NO descartamos la fila
-                  producto_id: productoSupabase ? productoSupabase.id : null,
-                  cantidad: cant,
-                  precio_unitario: prec,
-                  subtotal: subtotal_calc,
-                  unidad_seleccionada: (det.unidad || det.unidadmedida || det.unidad_seleccionada || 'UND').toString().trim(),
-                  // Guardamos el código ERP para poder identificar el producto aunque no vincule
-                  factor_aplicado: det.codigo_producto ? String(det.codigo_producto).trim() : null,
-                };
-              });
-              // ✅ Insertamos TODOS los detalles, incluso los sin producto vinculado
+                  const cant = Number(det.cantidad) || 0;
+                  const prec = Number(det.precio_unitario) || 0;
+                  const subtotal_calc = parseFloat((cant * prec).toFixed(2));
+
+                  return {
+                    pedido_id: cabeceraGuardada.id,
+                    producto_id: productoSupabase.id,
+                    cantidad: cant,
+                    precio_unitario: prec,
+                    subtotal: subtotal_calc,
+                    unidad_seleccionada: (det.unidad || det.unidadmedida || det.unidad_seleccionada || 'UND').toString().trim(),
+                    factor_aplicado: det.codigo_producto ? String(det.codigo_producto).trim() : null,
+                  };
+                })
+                .filter(Boolean); // Eliminar filas con producto no encontrado
+
               if (detallesParaGuardar.length > 0) {
-                await supabase.from('detalle_pedido').delete().eq('pedido_id', cabeceraGuardada.id);
-                await supabase.from('detalle_pedido').insert(detallesParaGuardar);
+                // 🛡️ PROTECCIÓN: Verificar si Supabase ya tiene detalles para este pedido
+                // (creados desde la app móvil). Si existen, NO los borramos.
+                const { data: existentes } = await supabase
+                  .from('detalle_pedido')
+                  .select('id')
+                  .eq('pedido_id', cabeceraGuardada.id)
+                  .limit(1);
+
+                if (!existentes || existentes.length === 0) {
+                  // No hay detalles en Supabase → importar desde SQL Server
+                  const { error: detInsertErr } = await supabase
+                    .from('detalle_pedido')
+                    .insert(detallesParaGuardar);
+                  if (detInsertErr) {
+                    console.error(`[SYNC] Error insertando detalles para pedido ${cabeceraGuardada.id}:`, detInsertErr.message);
+                  }
+                }
+                // Si ya hay detalles → preservar los de la app, no sobrescribir
               }
             }
             pedidosActualizados++;
