@@ -141,13 +141,14 @@ export default function EmployeesMapPage() {
         .not('location', 'is', null)
         .order('created_at', { ascending: false })
 
+      const oneHourAgo = new Date(Date.now() - 3600000).toISOString()
       let recentHistory: any[] = []
       try {
         const { data: hist } = await supabase
           .from('location_history')
           .select('employee_id, location, created_at')
+          .gte('created_at', oneHourAgo)
           .order('created_at', { ascending: false })
-          .limit(500)
         if (hist) recentHistory = hist
       } catch { /* silencioso */ }
 

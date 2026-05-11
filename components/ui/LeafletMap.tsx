@@ -95,55 +95,101 @@ function RoutePointCreator({ active, onPointCreated }: { active: boolean, onPoin
 
 // ─── ICONOS ─────────────────────────────────────────────────────────────────
 const createEmployeeIcon = (fullName: string, score: number, isActive: boolean) => {
-  const initial = fullName.charAt(0).toUpperCase()
   const borderColor = score < 70 ? '#dc2626' : score < 90 ? '#d97706' : '#16a34a'
-  const bgFrom = score < 70 ? '#fee2e2' : score < 90 ? '#fef3c7' : '#dcfce7'
-  const textColor = score < 70 ? '#991b1b' : score < 90 ? '#92400e' : '#166534'
-  const pulse = isActive ? `<div style="position:absolute;bottom:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#22c55e;border:2px solid white;animation:pulse 2s infinite"></div>` : ''
+  const pulse = isActive ? `<div style="position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:#22c55e;border:1.5px solid white;animation:pulse 2s infinite;z-index:10"></div>` : ''
   return L.divIcon({
-    className: '',
-    html: `<div style="position:relative">
-      <div style="width:40px;height:40px;background:linear-gradient(135deg,${bgFrom},white);border-radius:50%;border:2.5px solid ${borderColor};box-shadow:0 4px 12px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center">
-        <span style="color:${textColor};font-weight:900;font-size:15px;font-family:sans-serif">${initial}</span>
+    className: 'employee-marker',
+    html: `<div class="marker-container" style="position:relative;display:flex;flex-direction:column;align-items:center">
+      <div class="marker-mini" style="width:12px;height:12px;background:${borderColor};border-radius:50%;border:2px solid white;box-shadow:0 2px 6px ${borderColor}80;transition:all 0.25s ease">
+        <div class="marker-expanded" style="position:absolute;top:-14px;left:-14px;width:40px;height:40px;background:linear-gradient(135deg,white,#f8fafc);border-radius:50%;border:3px solid ${borderColor};box-shadow:0 6px 16px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all 0.25s ease;transform:scale(0.5)">
+          <span style="color:${borderColor};font-weight:900;font-size:16px;font-family:sans-serif">${fullName.charAt(0).toUpperCase()}</span>
+        </div>
       </div>
-      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${borderColor}"></div>
+      <div class="marker-tooltip" style="position:absolute;top:-38px;left:50%;transform:translateX(-50%) translateY(8px);background:white;border:2px solid ${borderColor};border-radius:10px;padding:6px 10px;box-shadow:0 4px 12px rgba(0,0,0,0.25);opacity:0;visibility:hidden;transition:all 0.25s ease;white-space:nowrap;z-index:5">
+        <div style="font-weight:900;font-size:12px;color:#1f2937">${fullName}</div>
+        <div style="font-size:9px;color:#6b7280">GPS: ${score}% · ${isActive ? 'En línea' : 'Desconectado'}</div>
+      </div>
       ${pulse}
-    </div>`,
-    iconSize: [40, 48],
-    iconAnchor: [20, 48],
+    </div>
+    <style>
+      .employee-marker:hover .marker-mini {
+        transform:scale(1.3);
+      }
+      .employee-marker:hover .marker-expanded {
+        opacity:1 !important;
+        visibility:visible !important;
+        transform:scale(1) !important;
+      }
+      .employee-marker:hover .marker-tooltip {
+        opacity:1 !important;
+        visibility:visible !important;
+        transform:translateX(-50%) translateY(0) !important;
+      }
+      .employee-marker:hover {
+        z-index:999 !important;
+      }
+      @keyframes pulse {
+        0% { transform:scale(1); opacity:1; }
+        50% { transform:scale(1.3); opacity:0.7; }
+        100% { transform:scale(1); opacity:1; }
+      }
+    </style>`,
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
     popupAnchor: [0, -50]
   })
 }
 
 const createVisitIcon = (outcome: string) => {
-  // compatible con 'closed' (móvil) y 'store_closed' (legado)
   const normalizedOutcome = outcome === 'closed' ? 'store_closed' : outcome
-  const colors: Record<string, [string, string]> = {
-    sale:         ['#16a34a', '#bbf7d0'],
-    no_sale:      ['#d97706', '#fef9c3'],
-    store_closed: ['#dc2626', '#fee2e2'],
+  const colors: Record<string, [string, string, string]> = {
+    sale: ['#16a34a', '#bbf7d0', 'Venta'],
+    no_sale: ['#d97706', '#fef9c3', 'Sin Venta'],
+    store_closed: ['#dc2626', '#fee2e2', 'Cerrada'],
   }
-  const [border, bg] = colors[normalizedOutcome] || ['#6b7280', '#f3f4f6']
+  const [border, bg, label] = colors[normalizedOutcome] || ['#6b7280', '#f3f4f6', 'Visita']
 
-  // Iconos SVG inline por outcome
   const svgIcons: Record<string, string> = {
-    sale: `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
-    no_sale: `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
-    store_closed: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+    sale: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+    no_sale: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+    store_closed: `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
   }
-  const svg = svgIcons[normalizedOutcome] || `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+  const svg = svgIcons[normalizedOutcome] || svgIcons.sale
 
   return L.divIcon({
-    className: '',
-    html: `<div style="position:relative">
-      <div style="width:38px;height:38px;background:${bg};border-radius:50%;border:3px solid ${border};box-shadow:0 3px 10px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center">${svg}</div>
-      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${border}"></div>
-    </div>`,
-    iconSize: [38, 46],
-    iconAnchor: [19, 46],
+    className: 'visit-marker-expanded',
+    html: `<div class="visit-marker-container" style="position:relative;display:flex;flex-direction:column;align-items:center">
+      <div class="visit-marker-mini" style="width:10px;height:10px;background:${border};border-radius:50%;border:2px solid white;box-shadow:0 2px 6px ${border}80;transition:all 0.25s ease">
+        <div class="visit-marker-expanded-inner" style="position:absolute;top:-12px;left:-12px;width:34px;height:34px;background:${bg};border-radius:50%;border:3px solid ${border};box-shadow:0 4px 12px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all 0.25s ease;transform:scale(0.5)">${svg}</div>
+      </div>
+      <div class="visit-marker-tooltip" style="position:absolute;top:-32px;left:50%;transform:translateX(-50%) translateY(8px);background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 8px;box-shadow:0 3px 10px rgba(0,0,0,0.2);opacity:0;visibility:hidden;transition:all 0.25s ease;white-space:nowrap;z-index:5">
+        <span style="font-weight:700;font-size:11px;color:${border}">${label}</span>
+      </div>
+    </div>
+    <style>
+      .visit-marker-expanded:hover .visit-marker-mini {
+        transform:scale(1.4);
+      }
+      .visit-marker-expanded:hover .visit-marker-expanded-inner {
+        opacity:1 !important;
+        visibility:visible !important;
+        transform:scale(1) !important;
+      }
+      .visit-marker-expanded:hover .visit-marker-tooltip {
+        opacity:1 !important;
+        visibility:visible !important;
+        transform:translateX(-50%) translateY(0) !important;
+      }
+      .visit-marker-expanded:hover {
+        z-index:998 !important;
+      }
+    </style>`,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
     popupAnchor: [0, -48]
   })
 }
+
 
 const createRoutePointIcon = (color: string, hasClient: boolean, label: string) => {
   const c = color || (hasClient ? '#16a34a' : '#6366f1')
@@ -223,6 +269,28 @@ function LeafletMap({
     const normalized = o === 'closed' ? 'store_closed' : o
     return ({ sale: 'Venta Exitosa', no_sale: 'Sin Venta', store_closed: 'Tienda Cerrada' })[normalized] || o
   }
+
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.textContent = `
+      .visit-marker:hover .visit-marker-inner {
+        opacity: 0;
+        transform: scale(0.5);
+      }
+      .visit-marker:hover .visit-marker-full {
+        opacity: 1;
+        transform: scale(1);
+      }
+      .leaflet-marker-icon.visit-marker {
+        transition: transform 0.2s ease;
+      }
+      .leaflet-marker-icon.visit-marker:hover {
+        z-index: 1000 !important;
+      }
+    `
+    document.head.appendChild(style)
+    return () => { document.head.removeChild(style) }
+  }, [])
 
   return (
     <div style={{ position: 'relative' }}>
@@ -366,11 +434,30 @@ function LeafletMap({
   )
 }
 
+function employeeLocationChanged(prev: EmployeeLocation[], next: EmployeeLocation[]): boolean {
+  if (prev.length !== next.length) return true
+  for (let i = 0; i < prev.length; i++) {
+    if (prev[i].latitude !== next[i].latitude || prev[i].longitude !== next[i].longitude) return true
+  }
+  return false
+}
+
+function visitsChanged(prev: any[] | undefined, next: any[] | undefined): boolean {
+  const p = prev || []
+  const n = next || []
+  if (p.length !== n.length) return true
+  for (let i = 0; i < p.length; i++) {
+    if (p[i]?.id !== n[i]?.id) return true
+  }
+  return false
+}
+
+
 export default memo(LeafletMap, (prev, next) => {
   if (prev.selectedEmployeeId !== next.selectedEmployeeId) return false
   if (prev.creatingRoutePoint !== next.creatingRoutePoint) return false
-  if (prev.employees.length !== next.employees.length) return false
-  if ((prev.visits?.length ?? 0) !== (next.visits?.length ?? 0)) return false
+  if (employeeLocationChanged(prev.employees, next.employees)) return false
+  if (visitsChanged(prev.visits, next.visits)) return false
   if ((prev.pedidos?.length ?? 0) !== (next.pedidos?.length ?? 0)) return false
   if ((prev.routePoints?.length ?? 0) !== (next.routePoints?.length ?? 0)) return false
   return true
