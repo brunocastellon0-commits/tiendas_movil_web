@@ -438,12 +438,11 @@ export default function OrdersPage() {
   const [editError, setEditError] = useState<string | null>(null)
   const [editSuccess, setEditSuccess] = useState(false)
 
-  // ── Carga inicial ─────────────────────────────────────────────────────────
-  // Carga TODOS los clientes sin límite usando paginación por rangos
   const fetchAllClients = async (): Promise<Client[]> => {
     const PAGE = 1000
     let from = 0
     let allClients: Client[] = []
+    const MAX = 3000
     while (true) {
       const { data, error } = await supabase
         .from('clients')
@@ -452,7 +451,7 @@ export default function OrdersPage() {
         .range(from, from + PAGE - 1)
       if (error || !data || data.length === 0) break
       allClients = [...allClients, ...data]
-      if (data.length < PAGE) break   // última página
+      if (data.length < PAGE || allClients.length >= MAX) break
       from += PAGE
     }
     return allClients
@@ -461,25 +460,45 @@ export default function OrdersPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [ordersRes, allClients, productsRes, employeesRes] = await Promise.all([
-        supabase.from('pedidos')
-          .select('*, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
-          .order('fecha_pedido', { ascending: false }),
-        fetchAllClients(),
+      const ordersPromise = supabase.from('pedidos')
+        .select('id, numero_documento, fecha_pedido, total_venta, estado, tipo_pago, observacion, ubicacion_venta, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
+        .order('fecha_pedido', { ascending: false })
+        .limit(500)
+
+      const catPromises: any[] = []
+      if (clients.length === 0) catPromises.push(fetchAllClients())
+      if (products.length === 0) catPromises.push(
         supabase.from('productos')
           .select('id, codigo_producto, nombre_producto, precio_base_venta, unidad_base_venta, stock_actual')
           .or('activo.eq.true,estado.eq.Activo')
-          .order('nombre_producto'),
+          .order('nombre_producto')
+      )
+      if (employees.length === 0) catPromises.push(
         supabase.from('employees')
           .select('id, full_name, legacy_id, email')
           .eq('status', 'Habilitado')
-          .order('full_name'),
-      ])
-      if (ordersRes.error) throw ordersRes.error
-      if (ordersRes.data) setOrders(ordersRes.data as any)
-      if (allClients.length > 0) setClients(allClients)
-      if (productsRes.data) setProducts(productsRes.data as any)
-      if (employeesRes.data) setEmployees(employeesRes.data as any)
+          .order('full_name')
+      )
+
+      const allPromises = [ordersPromise, ...catPromises]
+      const results = await Promise.all(allPromises)
+
+      if (results[0].error) throw results[0].error
+      if (results[0].data) setOrders(results[0].data as any)
+
+      let idx = 1
+      if (clients.length === 0) {
+        const allClients = results[idx++] as Client[]
+        if (allClients.length > 0) setClients(allClients)
+      }
+      if (products.length === 0) {
+        const productsRes = results[idx++] as any
+        if (productsRes.data) setProducts(productsRes.data as any)
+      }
+      if (employees.length === 0) {
+        const employeesRes = results[idx++] as any
+        if (employeesRes.data) setEmployees(employeesRes.data as any)
+      }
     } catch (err: any) {
       console.error('Error cargando datos:', err)
     } finally {

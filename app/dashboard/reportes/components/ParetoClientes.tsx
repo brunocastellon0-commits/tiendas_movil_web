@@ -66,8 +66,8 @@ export default function ParetoAnalysis() {
       setLoading(true)
       const { data: result, error } = await supabase
         .from('analytics_pareto_clientes')
-        .select('*')
-        .order('monto_total', { ascending: false }) // Traemos ordenado por defecto
+        .select('client_id, nombre_cliente, codigo_cliente, zona, monto_total, frecuencia_pedidos, ultima_compra, deuda_actual, pct_acumulado, clasificacion_abc, clasificacion_frecuencia, alerta_riesgo_pareto')
+        .order('monto_total', { ascending: false })
       
       if (!error && result) setData(result)
       setLoading(false)

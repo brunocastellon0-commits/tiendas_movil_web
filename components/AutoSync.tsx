@@ -8,8 +8,9 @@ export default function AutoSync() {
   const [lastSync, setLastSync] = useState<string>('')
 
   useEffect(() => {
-    // Funcion que ejecuta la sincronizacion
     const runSync = async () => {
+      if (document.visibilityState !== 'visible') return
+
       try {
         setStatus('syncing')
         
@@ -20,7 +21,6 @@ export default function AutoSync() {
           setStatus('success')
           setLastSync(new Date().toLocaleTimeString())
           
-          // Si hubo pedidos procesados, mostramos log en consola
           if (data.synced && data.synced > 0) {
             console.log(`✅ AutoSync: ${data.message}`)
           }
@@ -31,19 +31,24 @@ export default function AutoSync() {
         console.error('AutoSync Error:', error)
         setStatus('error')
       } finally {
-        // Volver a estado inactivo despues de 3 segundos
         setTimeout(() => setStatus('idle'), 3000)
       }
     }
 
-    // Ejecutar inmediatamente al montar
     runSync()
 
-    // Configurar intervalo de 60 segundos (60000 ms)
-    const intervalId = setInterval(runSync, 60000)
+    const intervalId = setInterval(runSync, 300000)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        runSync()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
 
-    // Limpieza al desmontar
-    return () => clearInterval(intervalId)
+    return () => {
+      clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [])
 
   // Renderizado visual discreto (esquina inferior derecha)

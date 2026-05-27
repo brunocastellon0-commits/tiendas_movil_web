@@ -166,27 +166,18 @@ export default function InventoryTab() {
     precios_volumen: 'false'
   })
 
-  // ── Cargar catálogos (solo una vez)
   useEffect(() => {
-    supabase.from('categorias').select('*').order('nombre_categoria')
-      .then(({ data }) => { if (data) setCategories(data) })
-    supabase.from('proveedores').select('*').order('nombre')
-      .then(({ data }) => { if (data) setProviders(data) })
+    supabase.from('categorias').select('id, nombre_categoria').order('nombre_categoria')
+      .then(({ data }) => { if (data) setCategories(data as Category[]) })
+    supabase.from('proveedores').select('id, codigo, nombre').order('nombre')
+      .then(({ data }) => { if (data) setProviders(data as Provider[]) })
   }, [])
 
-  // ── KPIs ligeros (count, no traer todos los datos)
   useEffect(() => {
     const fetchKpis = async () => {
-      const [totalRes, lowRes] = await Promise.all([
-        supabase.from('productos').select('*', { count: 'exact', head: true }),
-        supabase.from('productos').select('*', { count: 'exact', head: true })
-          .lte('stock_actual', (supabase.from('productos') as any)?.stock_min ?? 0)
-      ])
-      // count de stock bajo: productos donde stock_actual <= stock_min
-      // Usamos un query más explícito:
-      const { count: total } = await supabase.from('productos').select('*', { count: 'exact', head: true })
-      const { count: lowStock } = await supabase.from('productos').select('*', { count: 'exact', head: true })
-        .filter('stock_actual', 'lte', 0)   // aproximación rápida (stock 0)
+      const { count: total } = await supabase.from('productos').select('id', { count: 'exact', head: true })
+      const { count: lowStock } = await supabase.from('productos').select('id', { count: 'exact', head: true })
+        .filter('stock_actual', 'lte', 0)
       setKpis({
         totalSKUs: total ?? 0,
         lowStockCount: lowStock ?? 0,
@@ -204,11 +195,9 @@ export default function InventoryTab() {
         .select(`
           id, codigo_producto, nombre_producto, estado, precio_base_venta,
           unidad_base_venta, stock_actual, stock_min, stock_max,
-          observacion, extra_1, comision, comision2, tipo, peso_bruto,
-          activo, kg_unidad, descuento_volumen, descuento_temporada,
-          precios_volumen, categoria_id, proveedor_id, created_at,
+          activo, categoria_id, proveedor_id,
           categoria:categorias (id, nombre_categoria),
-          proveedor:proveedores (id, nombre, razon_social)
+          proveedor:proveedores (id, nombre)
         `, { count: 'exact' })
         .order('nombre_producto', { ascending: true })
         .range(pg * PAGE_SIZE, pg * PAGE_SIZE + PAGE_SIZE - 1)
@@ -343,21 +332,9 @@ export default function InventoryTab() {
         console.error('Error de red en sincronizacion:', syncError)
       }
 
-      // 3. Finalizacion exitosa
       setFormSuccess(true)
       
-      // Recargar datos para reflejar cambios
-      const { data: updatedProducts } = await supabase
-        .from('productos')
-        .select(`
-          *,
-          categoria:categorias (id, nombre_categoria),
-          proveedor:proveedores (id, nombre, razon_social)
-        `)
-        .order('created_at', { ascending: false })
-      
-      if (updatedProducts) setProducts(updatedProducts as any)
-
+      fetchProducts(page)
       clearForm()
       setIsEditing(false)
       setEditingId(null)

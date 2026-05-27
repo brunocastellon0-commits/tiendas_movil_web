@@ -26,10 +26,10 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { session } } = await supabase.auth.getSession()
 
-  // Si no hay usuario y trata de entrar a cualquier ruta que no sea login, redirigir
-  if (!user && !request.nextUrl.pathname.startsWith('/login')) {
+  // Si no hay sesión y trata de entrar a cualquier ruta que no sea login, redirigir
+  if (!session && !request.nextUrl.pathname.startsWith('/login')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
@@ -38,14 +38,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Coincidir con todas las rutas excepto:
-     * - _next/static (archivos estáticos)
-     * - _next/image (optimización de imágenes)
-     * - favicon.ico (ícono)
-     * - login (ruta pública)
-     * - auth (rutas de auth)
-     */
-    '/((?!_next/static|_next/image|favicon.ico|login|auth).*)',
+    '/((?!_next/static|_next/image|favicon.ico|login|auth|api).*)',
   ],
 }

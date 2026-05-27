@@ -66,7 +66,7 @@ export default function CategoriesTab() {
       
       const { data, error } = await supabase
         .from('categorias')
-        .select('*')
+        .select('id, empresa, nombre_categoria, linea, marca')
         .order('created_at', { ascending: false })
 
       if (error) throw error

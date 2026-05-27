@@ -191,6 +191,7 @@ export default function VentasPage() {
       const { data } = await supabase.from('pedidos')
         .select('id, numero_documento, fecha_pedido, total_venta, estado, tipo_pago, observacion, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
         .order('fecha_pedido', { ascending: false })
+        .limit(500)
       if (data) setOrders(data as any)
     } finally {
       setLoading(false)

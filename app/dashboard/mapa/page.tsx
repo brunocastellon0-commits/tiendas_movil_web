@@ -149,6 +149,7 @@ export default function EmployeesMapPage() {
           .select('employee_id, location, created_at')
           .gte('created_at', oneHourAgo)
           .order('created_at', { ascending: false })
+          .limit(500)
         if (hist) recentHistory = hist
       } catch { /* silencioso */ }
 
@@ -167,7 +168,7 @@ export default function EmployeesMapPage() {
       // Visitas — filtro de fechas
       try {
         let q = supabase.from('visits')
-          .select('*, clients:client_id (name, legacy_id, code), employees:seller_id (full_name), check_in_location, check_out_location')
+          .select('id, start_time, end_time, outcome, notes, duration_seconds, gps_accuracy_meters, seller_id, client_id, clients:client_id (name, legacy_id, code), employees:seller_id (full_name), check_in_location, check_out_location')
           .or('check_in_location.not.is.null,check_out_location.not.is.null')
           .neq('outcome', 'pending')
           .gte('start_time', filterDateFrom)

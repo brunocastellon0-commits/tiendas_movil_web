@@ -124,7 +124,7 @@ export default function ProvidersTab() {
 
       const { data: categoriesData, error: categoriesError } = await supabase
         .from('categorias')
-        .select('*')
+        .select('id, nombre_categoria')
         .order('nombre_categoria')
 
       if (categoriesError) throw categoriesError

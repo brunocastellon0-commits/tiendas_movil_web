@@ -117,7 +117,7 @@ export default function ClientsPage() {
 
       let query = supabase
         .from('clients')
-        .select('*', { count: 'exact' })
+        .select('id, code, name, business_name, tax_id, address, phones, credit_limit, current_balance, latitude, longitude, status', { count: 'exact' })
         .order('name', { ascending: true })
         .range(from, to)
 

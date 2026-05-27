@@ -83,7 +83,7 @@ export default function EmployeesManagement() {
       const supabase = createClient()
       try {
         const [empRes, zonesRes] = await Promise.all([
-          supabase.from('employees').select('*').order('created_at', { ascending: false }),
+          supabase.from('employees').select('id, full_name, email, phone, role, job_title, status, created_at').order('created_at', { ascending: false }),
           supabase.from('zones').select('id, codigo_zona, name, vendedor_id').order('codigo_zona', { ascending: true }),
         ])
         if (empRes.error) throw empRes.error
