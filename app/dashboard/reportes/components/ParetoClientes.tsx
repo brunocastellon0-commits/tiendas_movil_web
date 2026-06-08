@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import { 
   TrendingUp, AlertOctagon, Wallet, Users, ArrowUpRight, 
-  MoreHorizontal, FileDown, Search, Filter, Award, AlertTriangle, Info
+  MoreHorizontal, FileDown, Search, Filter, Award, AlertTriangle, Info, AlertCircle
 } from 'lucide-react'
 
 // --- TIPO DE DATOS ---
@@ -57,6 +57,7 @@ export default function ParetoAnalysis() {
   // --- ESTADOS ---
   const [data, setData] = useState<ParetoCliente[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'TODOS' | 'A' | 'B' | 'C'>('TODOS')
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -64,12 +65,17 @@ export default function ParetoAnalysis() {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true)
-      const { data: result, error } = await supabase
+      setError(null)
+      const { data: result, error: err } = await supabase
         .from('analytics_pareto_clientes')
         .select('client_id, nombre_cliente, codigo_cliente, zona, monto_total, frecuencia_pedidos, ultima_compra, deuda_actual, pct_acumulado, clasificacion_abc, clasificacion_frecuencia, alerta_riesgo_pareto')
         .order('monto_total', { ascending: false })
       
-      if (!error && result) setData(result)
+      if (err) {
+        setError(err.message)
+      } else if (result) {
+        setData(result)
+      }
       setLoading(false)
     }
     fetchData()
@@ -100,13 +106,24 @@ export default function ParetoAnalysis() {
 
   if (loading) return (
     <div className="min-h-[400px] flex flex-col items-center justify-center gap-3">
-      <div className="w-8 h-8 border-4 border-slate-900 border-t-transparent rounded-full animate-spin"></div>
-      <p className="text-slate-500 text-sm font-medium animate-pulse">Cargando inteligencia de negocios...</p>
+      <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+      <p className="text-gray-500 text-sm font-medium animate-pulse">Cargando inteligencia de negocios...</p>
+    </div>
+  )
+
+  if (error) return (
+    <div className="bg-red-50 border border-red-200 p-5 rounded-2xl flex items-start gap-3 text-sm">
+      <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+      <div>
+        <p className="font-bold text-red-800">Error al cargar datos de Pareto</p>
+        <p className="text-red-700 mt-1">{error}</p>
+        <p className="text-red-500 text-xs mt-2">Verifica que la vista <b>analytics_pareto_clientes</b> existe en Supabase y tiene datos.</p>
+      </div>
     </div>
   )
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-8 p-4 md:p-8 bg-slate-50/50 min-h-screen">
+    <div className="w-full max-w-7xl mx-auto space-y-8">
       
       {/* 1. ENCABEZADO EJECUTIVO */}
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">

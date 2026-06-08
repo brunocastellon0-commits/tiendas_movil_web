@@ -1,14 +1,18 @@
 'use client'
 
 import { createClient } from '@/utils/supabase/client'
-import { Bell, Calendar, ChevronRight, Clock } from 'lucide-react'
+import Image from 'next/image'
+import { usePathname } from 'next/navigation'
+import { Bell, Calendar, ChevronRight, Clock, Menu, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useSidebar } from '@/contexts/SidebarContext'
 
 export default function Header() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [userName, setUserName] = useState('Usuario')
   const [userEmail, setUserEmail] = useState('')
   const [userInitials, setUserInitials] = useState('U')
+  const { toggle } = useSidebar()
   
   // Obtener datos del usuario desde Supabase
   useEffect(() => {
@@ -63,10 +67,20 @@ export default function Header() {
   return (
     <header className="h-20 bg-gradient-to-r from-white via-gray-50/50 to-white border-b-2 border-green-100 flex items-center justify-between px-8 sticky top-0 z-20 shadow-lg backdrop-blur-sm">
       
-      {/* Left Section - Breadcrumb */}
-      <div className="flex items-center gap-6">
-        {/* Breadcrumb mejorado */}
-        <div className="flex items-center text-sm font-medium">
+      {/* Left Section */}
+      <div className="flex items-center gap-4">
+        {/* Hamburger menu */}
+        <button onClick={toggle} className="md:hidden p-2 hover:bg-green-50 rounded-xl transition-colors">
+          <Menu className="w-6 h-6 text-gray-700" />
+        </button>
+
+        {/* Logo pequeño en mobile */}
+        <div className="md:hidden w-8 h-8 rounded-xl bg-white border-2 border-green-200 overflow-hidden flex-shrink-0">
+          <Image src="/images/logomovil.jpeg" alt="TM" width={32} height={32} className="object-contain" />
+        </div>
+
+        {/* Breadcrumb */}
+        <div className="hidden md:flex items-center text-sm font-medium">
           <span className="text-gray-600">Panel Administrativo</span>
           <ChevronRight className="w-4 h-4 text-gray-400 mx-1" />
           <span className="font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">

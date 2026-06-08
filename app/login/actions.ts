@@ -11,7 +11,7 @@ export async function login(formData: FormData) {
   const password = formData.get('password') as string
 
   if (!email || !password) {
-    throw new Error('Por favor ingresa un correo y contraseña')
+    throw new Error('Usuario o contraseña incorrecta')
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -20,7 +20,7 @@ export async function login(formData: FormData) {
   })
 
   if (error) {
-    throw new Error(error.message)
+    throw new Error('Usuario o contraseña incorrecta')
   }
 
   revalidatePath('/', 'layout')

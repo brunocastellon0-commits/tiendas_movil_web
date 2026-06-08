@@ -1,9 +1,13 @@
 'use client'
 
-import { BarChart3 } from 'lucide-react'
+import { useState } from 'react'
+import { BarChart3, MapPin } from 'lucide-react'
 import ParetoClientes from './components/ParetoClientes'
+import VisitasReport from './components/VisitasReport'
 
 export default function ReportesPage() {
+  const [activeTab, setActiveTab] = useState<'pareto' | 'visitas'>('pareto')
+
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
       
@@ -22,39 +26,40 @@ export default function ReportesPage() {
       <div className="fixed -bottom-40 -left-20 w-[450px] h-[450px] bg-green-300/25 rounded-full blur-3xl z-0 pointer-events-none"></div>
       <div className="fixed -bottom-20 -right-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl z-0 pointer-events-none"></div>
       
-      {/* Figuras geométricas */}
-      <div className="fixed top-20 right-1/4 w-20 h-20 border-3 border-emerald-500/40 rounded-xl rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
-      <div className="fixed top-32 right-1/3 w-14 h-14 bg-green-400/15 rounded-lg -rotate-6 z-0 pointer-events-none"></div>
-      <div className="fixed top-40 left-1/4 w-16 h-16 border-3 border-teal-500/35 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-500/10"></div>
-      <div className="fixed top-56 left-1/3 w-12 h-12 bg-emerald-300/20 rotate-45 z-0 pointer-events-none"></div>
-      <div className="fixed top-1/2 left-16 w-24 h-24 border-3 border-green-500/40 rotate-45 z-0 pointer-events-none shadow-lg shadow-green-500/10"></div>
-      <div className="fixed top-1/2 left-32 w-10 h-10 bg-teal-400/20 rounded-lg -rotate-12 z-0 pointer-events-none"></div>
-      <div className="fixed top-1/3 right-20 w-18 h-18 border-3 border-emerald-600/35 rounded-2xl rotate-45 z-0 pointer-events-none shadow-lg shadow-emerald-600/10"></div>
-      <div className="fixed top-2/3 right-32 w-22 h-22 border-3 border-green-400/40 rotate-12 rounded-lg z-0 pointer-events-none"></div>
-      <div className="fixed bottom-1/3 left-20 w-16 h-16 border-3 border-teal-600/40 rounded-full z-0 pointer-events-none shadow-lg shadow-teal-600/10"></div>
-      <div className="fixed bottom-1/4 left-40 w-14 h-14 bg-green-300/20 rounded-xl rotate-45 z-0 pointer-events-none"></div>
-      <div className="fixed bottom-20 right-1/4 w-20 h-20 border-3 border-emerald-500/45 rounded-lg -rotate-12 z-0 pointer-events-none shadow-lg shadow-emerald-500/10"></div>
-      <div className="fixed bottom-32 right-1/3 w-12 h-12 bg-teal-400/25 rotate-6 z-0 pointer-events-none"></div>
-      
       <div className="relative z-10">
       
-      {/* Header - Diseño vibrante */}
+      {/* Header */}
       <div className="mb-6 bg-white p-6 rounded-3xl shadow-lg border-2 border-green-100">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl shadow-lg">
-            <BarChart3 className="w-6 h-6 text-white" />
+            {activeTab === 'pareto' ? <BarChart3 className="w-6 h-6 text-white" /> : <MapPin className="w-6 h-6 text-white" />}
           </div>
           <div>
             <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 bg-clip-text text-transparent">
-              Análisis Pareto de Clientes
+              {activeTab === 'pareto' ? 'Análisis Pareto de Clientes' : 'Reporte de Visitas'}
             </h1>
-            <p className="text-gray-600 text-sm mt-1 font-medium">Identificación de clientes estratégicos según el principio 80/20</p>
+            <p className="text-gray-600 text-sm mt-1 font-medium">
+              {activeTab === 'pareto' ? 'Identificación de clientes estratégicos según el principio 80/20' : 'Total de puntos atendidos por día y por mes'}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Contenido del Pareto */}
-      <ParetoClientes />
+      {/* Tabs */}
+      <nav className="flex gap-3 mb-6 bg-white p-3 rounded-3xl border-2 border-green-100 shadow-lg">
+        {(['pareto', 'visitas'] as const).map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-bold text-sm transition-all capitalize ${
+              activeTab === tab ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg' : 'text-gray-700 hover:bg-green-50'
+            }`}>
+            {tab === 'pareto' ? <BarChart3 className="w-5 h-5" /> : <MapPin className="w-5 h-5" />}
+            {tab === 'pareto' ? 'Pareto (80/20)' : 'Visitas'}
+          </button>
+        ))}
+      </nav>
+
+      {/* Contenido */}
+      {activeTab === 'pareto' ? <ParetoClientes /> : <VisitasReport />}
 
       </div>
     </div>

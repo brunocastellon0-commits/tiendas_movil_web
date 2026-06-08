@@ -96,16 +96,16 @@ function RoutePointCreator({ active, onPointCreated }: { active: boolean, onPoin
 // ─── ICONOS ─────────────────────────────────────────────────────────────────
 const createEmployeeIcon = (fullName: string, score: number, isActive: boolean) => {
   const borderColor = score < 70 ? '#dc2626' : score < 90 ? '#d97706' : '#16a34a'
-  const pulse = isActive ? `<div style="position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:#22c55e;border:1.5px solid white;animation:pulse 2s infinite;z-index:10"></div>` : ''
+  const pulse = isActive ? `<div style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid white;animation:pulse 2s infinite;z-index:10"></div>` : ''
   return L.divIcon({
     className: 'employee-marker',
     html: `<div class="marker-container" style="position:relative;display:flex;flex-direction:column;align-items:center">
-      <div class="marker-mini" style="width:12px;height:12px;background:${borderColor};border-radius:50%;border:2px solid white;box-shadow:0 2px 6px ${borderColor}80;transition:all 0.25s ease">
-        <div class="marker-expanded" style="position:absolute;top:-14px;left:-14px;width:40px;height:40px;background:linear-gradient(135deg,white,#f8fafc);border-radius:50%;border:3px solid ${borderColor};box-shadow:0 6px 16px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all 0.25s ease;transform:scale(0.5)">
-          <span style="color:${borderColor};font-weight:900;font-size:16px;font-family:sans-serif">${fullName.charAt(0).toUpperCase()}</span>
+      <div class="marker-mini" style="width:18px;height:18px;background:${borderColor};border-radius:50%;border:3px solid white;box-shadow:0 2px 8px ${borderColor}99;transition:all 0.25s ease">
+        <div class="marker-expanded" style="position:absolute;top:-16px;left:-16px;width:50px;height:50px;background:linear-gradient(135deg,white,#f8fafc);border-radius:50%;border:3px solid ${borderColor};box-shadow:0 6px 20px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all 0.25s ease;transform:scale(0.5)">
+          <span style="color:${borderColor};font-weight:900;font-size:20px;font-family:sans-serif">${fullName.charAt(0).toUpperCase()}</span>
         </div>
       </div>
-      <div class="marker-tooltip" style="position:absolute;top:-38px;left:50%;transform:translateX(-50%) translateY(8px);background:white;border:2px solid ${borderColor};border-radius:10px;padding:6px 10px;box-shadow:0 4px 12px rgba(0,0,0,0.25);opacity:0;visibility:hidden;transition:all 0.25s ease;white-space:nowrap;z-index:5">
+      <div class="marker-tooltip" style="position:absolute;top:-42px;left:50%;transform:translateX(-50%) translateY(8px);background:white;border:2px solid ${borderColor};border-radius:10px;padding:6px 10px;box-shadow:0 4px 12px rgba(0,0,0,0.25);opacity:0;visibility:hidden;transition:all 0.25s ease;white-space:nowrap;z-index:5">
         <div style="font-weight:900;font-size:12px;color:#1f2937">${fullName}</div>
         <div style="font-size:9px;color:#6b7280">GPS: ${score}% · ${isActive ? 'En línea' : 'Desconectado'}</div>
       </div>
@@ -134,9 +134,9 @@ const createEmployeeIcon = (fullName: string, score: number, isActive: boolean) 
         100% { transform:scale(1); opacity:1; }
       }
     </style>`,
-    iconSize: [12, 12],
-    iconAnchor: [6, 6],
-    popupAnchor: [0, -50]
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    popupAnchor: [0, -60]
   })
 }
 
@@ -159,10 +159,10 @@ const createVisitIcon = (outcome: string) => {
   return L.divIcon({
     className: 'visit-marker-expanded',
     html: `<div class="visit-marker-container" style="position:relative;display:flex;flex-direction:column;align-items:center">
-      <div class="visit-marker-mini" style="width:10px;height:10px;background:${border};border-radius:50%;border:2px solid white;box-shadow:0 2px 6px ${border}80;transition:all 0.25s ease">
-        <div class="visit-marker-expanded-inner" style="position:absolute;top:-12px;left:-12px;width:34px;height:34px;background:${bg};border-radius:50%;border:3px solid ${border};box-shadow:0 4px 12px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all 0.25s ease;transform:scale(0.5)">${svg}</div>
+      <div class="visit-marker-mini" style="width:14px;height:14px;background:${border};border-radius:50%;border:2.5px solid white;box-shadow:0 2px 8px ${border}99;transition:all 0.25s ease">
+        <div class="visit-marker-expanded-inner" style="position:absolute;top:-13px;left:-13px;width:40px;height:40px;background:${bg};border-radius:50%;border:3px solid ${border};box-shadow:0 4px 14px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all 0.25s ease;transform:scale(0.5)">${svg}</div>
       </div>
-      <div class="visit-marker-tooltip" style="position:absolute;top:-32px;left:50%;transform:translateX(-50%) translateY(8px);background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 8px;box-shadow:0 3px 10px rgba(0,0,0,0.2);opacity:0;visibility:hidden;transition:all 0.25s ease;white-space:nowrap;z-index:5">
+      <div class="visit-marker-tooltip" style="position:absolute;top:-36px;left:50%;transform:translateX(-50%) translateY(8px);background:${bg};border:2px solid ${border};border-radius:8px;padding:5px 8px;box-shadow:0 3px 10px rgba(0,0,0,0.2);opacity:0;visibility:hidden;transition:all 0.25s ease;white-space:nowrap;z-index:5">
         <span style="font-weight:700;font-size:11px;color:${border}">${label}</span>
       </div>
     </div>
@@ -184,9 +184,9 @@ const createVisitIcon = (outcome: string) => {
         z-index:998 !important;
       }
     </style>`,
-    iconSize: [10, 10],
-    iconAnchor: [5, 5],
-    popupAnchor: [0, -48]
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -52]
   })
 }
 

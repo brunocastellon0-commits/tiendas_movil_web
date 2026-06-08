@@ -14,7 +14,8 @@ import {
     RefreshCw,
     Users,
     X,
-    XCircle
+    XCircle,
+    Info,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -99,10 +100,43 @@ export default function EmployeesMapPage() {
   const [shareSuccess, setShareSuccess] = useState(false)
   const [shareError, setShareError] = useState<string | null>(null)
 
-  // ── Filtros
-  const [filterEmployee, setFilterEmployee] = useState<string>('ALL')
-  const [filterDateFrom, setFilterDateFrom] = useState<string>(todayStr())
-  const [filterDateTo, setFilterDateTo] = useState<string>(todayStr())
+  // ── Filtros (persistidos en localStorage)
+  const [filterEmployee, setFilterEmployee] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'ALL'
+    return localStorage.getItem('mapa_employee') || 'ALL'
+  })
+  const [filterDateFrom, setFilterDateFrom] = useState<string>(() => {
+    if (typeof window === 'undefined') return todayStr()
+    return localStorage.getItem('mapa_datefrom') || todayStr()
+  })
+  const [filterDateTo, setFilterDateTo] = useState<string>(() => {
+    if (typeof window === 'undefined') return todayStr()
+    return localStorage.getItem('mapa_dateto') || todayStr()
+  })
+  const [filterScoreRed, setFilterScoreRed] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const v = localStorage.getItem('mapa_score_red'); return v === null ? true : v === '1'
+  })
+  const [filterScoreAmber, setFilterScoreAmber] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const v = localStorage.getItem('mapa_score_amber'); return v === null ? true : v === '1'
+  })
+  const [filterScoreGreen, setFilterScoreGreen] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const v = localStorage.getItem('mapa_score_green'); return v === null ? true : v === '1'
+  })
+
+  // Persistir cambios de filtros en localStorage
+  useEffect(() => {
+    try {
+      if (filterEmployee !== 'ALL') localStorage.setItem('mapa_employee', filterEmployee); else localStorage.removeItem('mapa_employee')
+      localStorage.setItem('mapa_datefrom', filterDateFrom)
+      localStorage.setItem('mapa_dateto', filterDateTo)
+      localStorage.setItem('mapa_score_red', filterScoreRed ? '1' : '0')
+      localStorage.setItem('mapa_score_amber', filterScoreAmber ? '1' : '0')
+      localStorage.setItem('mapa_score_green', filterScoreGreen ? '1' : '0')
+    } catch {}
+  }, [filterEmployee, filterDateFrom, filterDateTo, filterScoreRed, filterScoreAmber, filterScoreGreen])
 
   // ── Capas del mapa
   const [showEmployees, setShowEmployees] = useState(true)
@@ -138,30 +172,37 @@ export default function EmployeesMapPage() {
       const { data: empData } = await supabase
         .from('employees')
         .select('id, full_name, location, job_title, created_at, gps_trust_score')
-        .not('location', 'is', null)
         .order('created_at', { ascending: false })
 
-      const oneHourAgo = new Date(Date.now() - 3600000).toISOString()
-      let recentHistory: any[] = []
+      // Última ubicación conocida de cada empleado desde location_history
+      let latestHistory: any[] = []
       try {
         const { data: hist } = await supabase
           .from('location_history')
           .select('employee_id, location, created_at')
-          .gte('created_at', oneHourAgo)
           .order('created_at', { ascending: false })
-          .limit(500)
-        if (hist) recentHistory = hist
+          .limit(1000)
+
+        if (hist) {
+          // Tomar solo el último registro por empleado
+          const map = new Map<string, any>()
+          hist.forEach(h => {
+            if (!map.has(h.employee_id)) map.set(h.employee_id, h)
+          })
+          latestHistory = Array.from(map.values())
+        }
       } catch { /* silencioso */ }
 
       if (empData) {
-        const processed = empData.map(emp => {
-          const latestUpdate = recentHistory.find(h => h.employee_id === emp.id)
-          const locationSource = latestUpdate || emp
-          const { latitude, longitude } = parseLocation(locationSource.location)
+        const processed: EmployeeLocation[] = empData.map(emp => {
+          const latestUpdate = latestHistory.find(h => h.employee_id === emp.id)
+          const empLocation = emp.location
+          const sourceLoc = latestUpdate?.location || empLocation
+          const parsed = parseLocation(sourceLoc)
           const timestamp = latestUpdate ? latestUpdate.created_at : emp.created_at
           const is_active = !!latestUpdate && (Date.now() - new Date(timestamp).getTime()) < 3600000
-          return { id: emp.id, full_name: emp.full_name, latitude: latitude!, longitude: longitude!, job_title: emp.job_title, created_at: timestamp, gps_trust_score: emp.gps_trust_score, is_active }
-        }).filter(e => e.latitude && e.longitude && !isNaN(e.latitude) && !isNaN(e.longitude))
+          return { id: emp.id, full_name: emp.full_name, latitude: parsed?.latitude ?? 0, longitude: parsed?.longitude ?? 0, job_title: emp.job_title, created_at: timestamp, gps_trust_score: emp.gps_trust_score, is_active }
+        }).filter(e => e.latitude !== 0 && e.longitude !== 0 && !isNaN(e.latitude) && !isNaN(e.longitude))
         setLocations(processed)
       }
 
@@ -213,7 +254,18 @@ export default function EmployeesMapPage() {
     locations.filter(e => e.latitude && e.longitude && !isNaN(e.latitude) && !isNaN(e.longitude)),
     [locations]
   )
-  const mapEmployees = showEmployees ? validLocations.map(emp => ({
+
+  // Filtro por color de GPS score
+  const scoreFilteredLocations = useMemo(() => {
+    return validLocations.filter(e => {
+      const score = e.gps_trust_score ?? 100
+      if (score < 70) return filterScoreRed
+      if (score < 90) return filterScoreAmber
+      return filterScoreGreen
+    })
+  }, [validLocations, filterScoreRed, filterScoreAmber, filterScoreGreen])
+
+  const mapEmployees = showEmployees ? scoreFilteredLocations.map(emp => ({
     ...emp, latitude: emp.latitude!, longitude: emp.longitude!,
     last_update: getRelativeTime(emp.created_at)
   })) : []
@@ -255,6 +307,23 @@ export default function EmployeesMapPage() {
             </button>
           </div>
         </div>
+
+        {/* Geo status */}
+        {(() => {
+          const totalEmp = locations.length + (employees.length - locations.filter(l => employees.some(e => e.id === l.id)).length)
+          const withLoc = locations.length
+          const withoutLoc = employees.length - withLoc
+          if (employees.length === 0) return null
+          return (
+            <div className="bg-white p-3 rounded-2xl shadow-lg border-2 border-green-100 flex items-center gap-3 text-sm">
+              <Info className="w-4 h-4 text-green-600 flex-shrink-0" />
+              <span className="font-medium text-gray-600">
+                <b className="text-green-700">{withLoc}</b> empleados con ubicación
+                {withoutLoc > 0 && <span className="text-amber-600"> · <b>{withoutLoc}</b> sin ubicación</span>}
+              </span>
+            </div>
+          )
+        })()}
 
         {shareError && (
           <div className="bg-red-50 border-2 border-red-300 text-red-700 p-3 rounded-2xl flex items-center gap-2 text-sm">
@@ -311,7 +380,7 @@ export default function EmployeesMapPage() {
           <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-100">
             <span className="text-xs font-bold text-gray-500 self-center mr-1">Capas:</span>
             {[
-              { key: 'emp', label: `Empleados (${validLocations.length})`, state: showEmployees, set: setShowEmployees },
+              { key: 'emp', label: `Empleados (${scoreFilteredLocations.length})`, state: showEmployees, set: setShowEmployees },
               { key: 'vis', label: `Visitas (${visits.length})`, state: showVisits, set: setShowVisits },
             ].map(layer => (
               <button key={layer.key} onClick={() => layer.set(!layer.state)}
@@ -320,6 +389,22 @@ export default function EmployeesMapPage() {
                 {layer.label}
               </button>
             ))}
+
+            {/* Filtro por color de GPS score */}
+            <span className="text-xs font-bold text-gray-500 self-center mr-1 ml-2">Score GPS:</span>
+            {[
+              { key: 'red', label: 'Rojos (<70)', state: filterScoreRed, set: setFilterScoreRed, color: 'bg-red-500' },
+              { key: 'amb', label: 'Amarillos (70-89)', state: filterScoreAmber, set: setFilterScoreAmber, color: 'bg-amber-500' },
+              { key: 'grn', label: 'Verdes (>=90)', state: filterScoreGreen, set: setFilterScoreGreen, color: 'bg-green-500' },
+            ].map(btn => (
+              <button key={btn.key} onClick={() => btn.set(!btn.state)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all ${btn.state ? 'text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}
+                style={btn.state ? { backgroundColor: btn.color === 'bg-green-500' ? '#22c55e' : btn.color === 'bg-amber-500' ? '#f59e0b' : '#ef4444' } : {}}>
+                {btn.state ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                {btn.label}
+              </button>
+            ))}
+
             {hasActiveFilters && (
               <button
                 onClick={() => { setFilterEmployee('ALL'); setFilterDateFrom(todayStr()); setFilterDateTo(todayStr()) }}
@@ -344,7 +429,7 @@ export default function EmployeesMapPage() {
               <h2 className="text-lg font-black text-gray-900">Mapa Interactivo</h2>
               <p className="text-xs text-gray-500 font-medium">
                 {[
-              showEmployees && `${validLocations.length} empleados`,
+              showEmployees && `${scoreFilteredLocations.length} empleados`,
               showVisits && `${visits.length} visitas`,
             ].filter(Boolean).join(' · ') || 'Sin filtros activos'}
               </p>

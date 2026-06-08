@@ -68,6 +68,7 @@ type Order = {
   id: string
   numero_documento: number
   fecha_pedido: string
+  created_at: string
   total_venta: number
   estado: string
   tipo_pago: string
@@ -151,13 +152,25 @@ export default function VentasPage() {
   const [loading, setLoading] = useState(true)
 
   // ── Filtros
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterEstado, setFilterEstado] = useState('')
-  const [filterTipoPago, setFilterTipoPago] = useState('')
-  const [filterEmpleado, setFilterEmpleado] = useState('')
-  const [filterFechaDesde, setFilterFechaDesde] = useState('')
-  const [filterFechaHasta, setFilterFechaHasta] = useState('')
+  const [searchTerm, setSearchTerm] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('ventas_search') || '' : '')
+  const [filterEstado, setFilterEstado] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('ventas_estado') || '' : '')
+  const [filterTipoPago, setFilterTipoPago] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('ventas_tipopago') || '' : '')
+  const [filterEmpleado, setFilterEmpleado] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('ventas_empleado') || '' : '')
+  const [filterFechaDesde, setFilterFechaDesde] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('ventas_fechadesde') || '' : '')
+  const [filterFechaHasta, setFilterFechaHasta] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('ventas_fechahasta') || '' : '')
   const [showFilters, setShowFilters] = useState(false)
+
+  // Persistir filtros en localStorage
+  useEffect(() => {
+    try {
+      if (searchTerm) localStorage.setItem('ventas_search', searchTerm); else localStorage.removeItem('ventas_search')
+      if (filterEstado) localStorage.setItem('ventas_estado', filterEstado); else localStorage.removeItem('ventas_estado')
+      if (filterTipoPago) localStorage.setItem('ventas_tipopago', filterTipoPago); else localStorage.removeItem('ventas_tipopago')
+      if (filterEmpleado) localStorage.setItem('ventas_empleado', filterEmpleado); else localStorage.removeItem('ventas_empleado')
+      if (filterFechaDesde) localStorage.setItem('ventas_fechadesde', filterFechaDesde); else localStorage.removeItem('ventas_fechadesde')
+      if (filterFechaHasta) localStorage.setItem('ventas_fechahasta', filterFechaHasta); else localStorage.removeItem('ventas_fechahasta')
+    } catch {}
+  }, [searchTerm, filterEstado, filterTipoPago, filterEmpleado, filterFechaDesde, filterFechaHasta])
 
   // ── Paginación
   const PAGE_SIZE = 25
@@ -189,7 +202,7 @@ export default function VentasPage() {
     setLoading(true)
     try {
       const { data } = await supabase.from('pedidos')
-        .select('id, numero_documento, fecha_pedido, total_venta, estado, tipo_pago, observacion, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
+        .select('id, numero_documento, fecha_pedido, created_at, total_venta, estado, tipo_pago, observacion, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
         .order('fecha_pedido', { ascending: false })
         .limit(500)
       if (data) setOrders(data as any)
@@ -563,7 +576,7 @@ export default function VentasPage() {
                   onClick={() => openModal(o, 'detail')}
                   className="grid grid-cols-12 gap-2 p-4 hover:bg-green-50 transition-colors items-center text-sm cursor-pointer group">
                   <div className="col-span-1 font-black text-gray-800">#{o.numero_documento}</div>
-                  <div className="col-span-2 text-gray-500 text-xs">{format(new Date(o.fecha_pedido.slice(0, 10) + 'T12:00:00'), 'dd/MM/yy')}</div>
+                  <div className="col-span-2 text-gray-500 text-xs">{format(new Date(o.fecha_pedido), 'dd/MM/yy HH:mm')}</div>
                   <div className="col-span-3">
                     <p className="font-semibold text-gray-800 truncate">{o.clients?.name || <span className="text-red-400 italic">Sin cliente</span>}</p>
                     <div className="flex items-center gap-1 flex-wrap mt-0.5">
@@ -615,7 +628,7 @@ export default function VentasPage() {
                     <StatusBadge status={selectedOrder.estado} />
                   </div>
                   <p className="text-green-100 text-sm">
-                    {format(new Date(selectedOrder.fecha_pedido.slice(0, 10) + 'T12:00:00'), "dd 'de' MMMM yyyy", { locale: es })}
+                    {format(new Date(selectedOrder.fecha_pedido), "dd 'de' MMMM yyyy HH:mm", { locale: es })}
                     {selectedOrder.employees?.full_name && ` · ${selectedOrder.employees.full_name}`}
                   </p>
                 </div>

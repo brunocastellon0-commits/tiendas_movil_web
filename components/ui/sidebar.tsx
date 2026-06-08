@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import Image from 'next/image'
 import { 
   Users, 
   MapPin, 
@@ -12,10 +13,12 @@ import {
   ChevronRight,
   CircleDot,
   RefreshCw,
-  ShoppingCart
+  ShoppingCart,
+  X,
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { useSidebar } from '@/contexts/SidebarContext'
 
 const menuItems = [
   { name: 'Empleados', href: '/admin/empleado', icon: Users },
@@ -33,6 +36,7 @@ const supabase = createClient()
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const { isOpen, close } = useSidebar()
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -40,18 +44,17 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 bg-white border-r-2 border-green-100 hidden md:flex flex-col h-screen fixed left-0 top-0 z-50 shadow-xl">
+    <aside className={`w-64 bg-white border-r-2 border-green-100 flex-col h-screen fixed left-0 top-0 z-50 shadow-xl transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:flex`}>
       
-      {/* Logo Area - Premium y moderno */}
-      <div className="h-20 flex items-center justify-center border-b-2 border-green-100 bg-gradient-to-r from-white to-green-50/50 relative overflow-hidden">
-        {/* Decoración de fondo sutil */}
+      {/* Logo Area */}
+      <div className="h-20 flex items-center justify-between px-4 border-b-2 border-green-100 bg-gradient-to-r from-white to-green-50/50 relative overflow-hidden">
         <div className="absolute inset-0 opacity-5">
           <div className="absolute top-0 right-0 w-32 h-32 bg-green-500 rounded-full blur-3xl"></div>
         </div>
         
         <div className="flex items-center gap-3 relative z-10">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 flex items-center justify-center shadow-lg shadow-green-600/30 border-2 border-white">
-            <span className="text-white font-black text-lg">TM</span>
+          <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shadow-lg shadow-green-600/30 border-2 border-green-200 overflow-hidden">
+            <Image src="/images/logomovil.jpeg" alt="Tiendas Móvil" width={40} height={40} className="object-contain" />
           </div>
           <div>
             <h1 className="text-xl font-black text-gray-900">
@@ -60,6 +63,10 @@ export default function Sidebar() {
             <p className="text-xs text-gray-500 font-medium">Panel de Control</p>
           </div>
         </div>
+
+        <button onClick={close} className="md:hidden p-2 hover:bg-green-50 rounded-xl transition-colors relative z-10">
+          <X className="w-5 h-5 text-gray-600" />
+        </button>
       </div>
 
       {/* Separador decorativo */}

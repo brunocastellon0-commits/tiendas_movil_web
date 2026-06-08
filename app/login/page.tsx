@@ -3,7 +3,8 @@
 import { login } from './actions'
 import { useFormStatus } from 'react-dom'
 import { useState } from 'react'
-import { Lock, Mail, AlertCircle } from 'lucide-react'
+import Image from 'next/image'
+import { Lock, Mail } from 'lucide-react'
 
 // Componente auxiliar para el botón de submit con estado de carga
 function SubmitButton() {
@@ -51,10 +52,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        {/* Logo corporativo verde vibrante */}
+        {/* Logo corporativo */}
         <div className="flex justify-center mb-8">
-          <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 flex items-center justify-center shadow-2xl shadow-green-600/40 border-2 border-green-400 hover:scale-110 transition-transform duration-300">
-            <span className="text-white font-black text-3xl">TM</span>
+          <div className="w-20 h-20 rounded-3xl bg-white flex items-center justify-center shadow-2xl shadow-green-600/40 border-2 border-green-200 hover:scale-110 transition-transform duration-300 overflow-hidden">
+            <Image src="/images/logomovil.jpeg" alt="Tiendas Móvil" width={72} height={72} className="object-contain" />
           </div>
         </div>
         
@@ -69,16 +70,10 @@ export default function LoginPage() {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-10 px-8 shadow-2xl sm:rounded-3xl sm:px-12 border-2 border-green-100">
           
-          {/* Mensaje de error - Rojo vibrante */}
+          {/* Mensaje de error */}
           {errorMessage && (
-            <div className="mb-6 bg-red-50 border-2 border-red-300 p-5 rounded-2xl shadow-lg">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-black text-red-800">Error de autenticación</p>
-                  <p className="text-sm text-red-700 mt-1 font-medium">{errorMessage}</p>
-                </div>
-              </div>
+            <div className="mb-6 bg-red-50 border border-red-200 p-4 rounded-2xl text-center">
+              <p className="text-sm font-bold text-red-700">{errorMessage}</p>
             </div>
           )}
 

@@ -81,6 +81,7 @@ type Order = {
   id: string
   numero_documento: number
   fecha_pedido: string
+  created_at: string
   total_venta: number
   estado: string
   tipo_pago: string
@@ -461,7 +462,7 @@ export default function OrdersPage() {
     setLoading(true)
     try {
       const ordersPromise = supabase.from('pedidos')
-        .select('id, numero_documento, fecha_pedido, total_venta, estado, tipo_pago, observacion, ubicacion_venta, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
+        .select('id, numero_documento, fecha_pedido, created_at, total_venta, estado, tipo_pago, observacion, ubicacion_venta, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
         .order('fecha_pedido', { ascending: false })
         .limit(500)
 
