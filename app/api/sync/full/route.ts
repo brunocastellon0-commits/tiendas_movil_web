@@ -125,16 +125,43 @@ export async function GET() {
     // ========================================================================
     const { data: pendingOrders } = await supabase
       .from('pedidos')
-      .select(`*, clients_id ( legacy_id ), detalle_pedido ( producto_id, cantidad, precio_unitario, unidad_seleccionada, factor_aplicado )`)
+      .select('*')
       .is('legacy_id', null)
       .eq('estado', 'Pendiente');
 
+    let enrichedOrders: any[] = []
+    if (pendingOrders && pendingOrders.length > 0) {
+      // Obtener legacy_id de clientes
+      const poCliIds = [...new Set(pendingOrders.map((o: any) => o.clients_id).filter(Boolean))]
+      let poCliMap: Record<string, any> = {}
+      if (poCliIds.length > 0) {
+        const { data: poClients } = await supabase.from('clients').select('id, legacy_id').in('id', poCliIds)
+        if (poClients) poClients.forEach((c: any) => { poCliMap[c.id] = c })
+      }
+      // Obtener detalles
+      const poIds = pendingOrders.map((o: any) => o.id)
+      const { data: poDetalles } = await supabase
+        .from('detalle_pedido')
+        .select('pedido_id, producto_id, cantidad, precio_unitario, unidad_seleccionada, factor_aplicado')
+        .in('pedido_id', poIds)
+        .order('created_at')
+      const poDetailByOrder: Record<string, any[]> = {}
+      if (poDetalles) poDetalles.forEach((d: any) => {
+        if (!poDetailByOrder[d.pedido_id]) poDetailByOrder[d.pedido_id] = []
+        poDetailByOrder[d.pedido_id].push(d)
+      })
+      enrichedOrders = pendingOrders.map((o: any) => ({
+        ...o,
+        clients_id: o.clients_id ? { legacy_id: poCliMap[o.clients_id]?.legacy_id || null } : null,
+        detalle_pedido: poDetailByOrder[o.id] || [],
+      }))
+    }
 
     if (pendingOrders && pendingOrders.length > 0) {
       const pushResp = await fetch(`${API_OFICINA}/api/push-orders`, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ orders: pendingOrders }),
+        body: JSON.stringify({ orders: enrichedOrders }),
         cache: 'no-store'
       });
       const pushJson = await pushResp.json();

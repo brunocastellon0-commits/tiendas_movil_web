@@ -171,13 +171,15 @@ export default function ReportsTab() {
     const fetchOrders = async () => {
       setLoading(true)
       try {
+        // Fetch clientes map una vez
+        let rClienteMap: Record<string, any> = {}
+        const { data: rClients } = await supabase.from('clients')
+          .select('id, name, legacy_id, credit_days, current_balance')
+        if (rClients) rClients.forEach((c: any) => { rClienteMap[c.id] = c })
+
         let query = supabase
           .from('pedidos')
-          .select(`
-            id, numero_documento, fecha_pedido, tipo_pago, total_venta, estado,
-            empleado_id, descuento_porcentaje, descuento_monto,
-            clients:clients_id ( name, legacy_id, credit_days, current_balance )
-          `)
+          .select('id, numero_documento, fecha_pedido, tipo_pago, total_venta, estado, empleado_id, descuento_porcentaje, descuento_monto, clients_id')
           .eq('tipo_pago', 'Crédito')
           .order('fecha_pedido', { ascending: false })
 
@@ -189,7 +191,7 @@ export default function ReportsTab() {
         if (error) throw error
 
         const processedOrders: OrderData[] = (data || []).map((order: any) => {
-          const client = order.clients
+          const client = order.clients_id ? (rClienteMap[order.clients_id] || null) : null
           const creditDays = client?.credit_days || 30
           const dueDate = addDays(new Date(order.fecha_pedido), creditDays)
           const today = new Date()

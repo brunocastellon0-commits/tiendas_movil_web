@@ -27,7 +27,7 @@ export async function GET() {
     // 1. Buscar pedidos atascados (Pendiente + sin legacy_id)
     const { data: pendingOrders, error } = await supabase
       .from('pedidos')
-      .select(`*, clients_id ( legacy_id ), detalle_pedido ( producto_id, cantidad, precio_unitario, unidad_seleccionada, factor_aplicado )`)
+      .select('*')
       .is('legacy_id', null)
       .eq('estado', 'Pendiente')
       .limit(10);
@@ -38,11 +38,36 @@ export async function GET() {
       return NextResponse.json({ message: 'No hay pedidos pendientes de sincronizar.' });
     }
 
+    // 1b. Obtener legacy_id de los clientes relacionados
+    const orderClientIds = [...new Set(pendingOrders.map((o: any) => o.clients_id).filter(Boolean))]
+    let clientLegacyMap: Record<string, number | null> = {}
+    if (orderClientIds.length > 0) {
+      const { data: clients } = await supabase
+        .from('clients')
+        .select('id, legacy_id')
+        .in('id', orderClientIds)
+      if (clients) clients.forEach((c: any) => { clientLegacyMap[c.id] = c.legacy_id })
+    }
+
+    // 1c. Obtener detalle_pedido para cada pedido
+    const orderIds = pendingOrders.map((o: any) => o.id)
+    const { data: detalles } = await supabase
+      .from('detalle_pedido')
+      .select('pedido_id, producto_id, cantidad, precio_unitario, unidad_seleccionada, factor_aplicado')
+      .in('pedido_id', orderIds)
+      .order('created_at')
+
+    const detailByOrder: Record<string, any[]> = {}
+    if (detalles) {
+      detalles.forEach((d: any) => {
+        if (!detailByOrder[d.pedido_id]) detailByOrder[d.pedido_id] = []
+        detailByOrder[d.pedido_id].push(d)
+      })
+    }
+
     // 2. Enriquecer detalles con datos de productos (sin depender de FK)
     const allProductoIds = [...new Set(
-      pendingOrders.flatMap((o: any) =>
-        (o.detalle_pedido || []).map((d: any) => d.producto_id).filter(Boolean)
-      )
+      (detalles || []).map((d: any) => d.producto_id).filter(Boolean)
     )];
 
     let productoMap: Record<string, { codigo_producto: string; legacy_id: number | null }> = {};
@@ -56,10 +81,11 @@ export async function GET() {
       }
     }
 
-    // 3. Combinar detalles con info de productos
+    // 3. Combinar todo manualmente
     const enrichedOrders = pendingOrders.map((order: any) => ({
       ...order,
-      detalle_pedido: (order.detalle_pedido || []).map((d: any) => ({
+      clients_id: order.clients_id ? { legacy_id: clientLegacyMap[order.clients_id] || null } : null,
+      detalle_pedido: (detailByOrder[order.id] || []).map((d: any) => ({
         ...d,
         productos: productoMap[d.producto_id] || null,
       })),

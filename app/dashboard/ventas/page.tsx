@@ -64,17 +64,35 @@ type OrderDetail = {
   productos: { codigo_producto: string; nombre_producto: string } | null
 }
 
+// Mapas para resolver FK IDs (sin resource embedding)
+let vClienteMap: Record<string, { name: string; legacy_id: string | null; code: string | null }> = {}
+let vEmpleadoMap: Record<string, { full_name: string }> = {}
+
+async function vEnsureMaps(supabase: any) {
+  if (Object.keys(vClienteMap).length === 0) {
+    const { data } = await supabase.from('clients').select('id, name, legacy_id, code')
+    if (data) data.forEach((c: any) => { vClienteMap[c.id] = c })
+  }
+  if (Object.keys(vEmpleadoMap).length === 0) {
+    const { data } = await supabase.from('employees').select('id, full_name')
+    if (data) data.forEach((e: any) => { vEmpleadoMap[e.id] = e })
+  }
+}
+
 type Order = {
   id: string
-  numero_documento: number
+  numero_documento: string
   fecha_pedido: string
-  created_at: string
+  crated_at: string
   total_venta: number
   estado: string
   tipo_pago: string
   observacion: string | null
-  clients: { name: string; legacy_id: string | null; code?: string | null } | null
-  employees: { full_name: string } | null
+  clients_id: string | null
+  empleado_id: string | null
+  // enriquecidos después del fetch
+  clients?: { name: string; legacy_id: string | null; code?: string | null } | null
+  employees?: { full_name: string } | null
 }
 
 // ─── StatusBadge ──────────────────────────────────────────────────────────────
@@ -201,11 +219,19 @@ export default function VentasPage() {
   const fetchOrders = async () => {
     setLoading(true)
     try {
-      const { data } = await supabase.from('pedidos')
-        .select('id, numero_documento, fecha_pedido, created_at, total_venta, estado, tipo_pago, observacion, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
+      const { data: raw } = await supabase.from('pedidos')
+        .select('id, numero_documento, fecha_pedido, crated_at, total_venta, estado, tipo_pago, observacion, clients_id, empleado_id')
         .order('fecha_pedido', { ascending: false })
         .limit(500)
-      if (data) setOrders(data as any)
+      if (raw) {
+        await vEnsureMaps(supabase)
+        const enriched = (raw as any[]).map(o => ({
+          ...o,
+          clients: o.clients_id ? (vClienteMap[o.clients_id] || null) : null,
+          employees: o.empleado_id ? (vEmpleadoMap[o.empleado_id] || null) : null,
+        }))
+        setOrders(enriched as any)
+      }
     } finally {
       setLoading(false)
     }

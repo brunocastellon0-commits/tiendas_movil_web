@@ -77,18 +77,35 @@ type OrderDetail = {
   productos: { codigo_producto: string; nombre_producto: string } | null
 }
 
+// Mapas globales para relacionar FK IDs con nombres (se llenan una vez)
+let clienteMap: Record<string, { name: string; legacy_id: string | null; code: string | null }> = {}
+let empleadoMap: Record<string, { full_name: string }> = {}
+
+async function ensureMaps(supabase: any) {
+  if (Object.keys(clienteMap).length === 0) {
+    const { data } = await supabase.from('clients').select('id, name, legacy_id, code')
+    if (data) data.forEach((c: any) => { clienteMap[c.id] = c })
+  }
+  if (Object.keys(empleadoMap).length === 0) {
+    const { data } = await supabase.from('employees').select('id, full_name')
+    if (data) data.forEach((e: any) => { empleadoMap[e.id] = e })
+  }
+}
+
 type Order = {
   id: string
-  numero_documento: number
+  numero_documento: string
   fecha_pedido: string
-  created_at: string
+  crated_at: string
   total_venta: number
   estado: string
   tipo_pago: string
   observacion: string | null
   ubicacion_venta: any
-  clients: { name: string; legacy_id: string | null; code?: string | null } | null
-  employees: { full_name: string } | null
+  clients_id: string | null
+  empleado_id: string | null
+  clients?: { name: string; legacy_id: string | null; code: string | null } | null
+  employees?: { full_name: string } | null
 }
 
 // ─── StatusBadge ─────────────────────────────────────────────────────────────
@@ -461,11 +478,7 @@ export default function OrdersPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const ordersPromise = supabase.from('pedidos')
-        .select('id, numero_documento, fecha_pedido, created_at, total_venta, estado, tipo_pago, observacion, ubicacion_venta, clients:clients_id (name, legacy_id, code), employees:empleado_id (full_name)')
-        .order('fecha_pedido', { ascending: false })
-        .limit(500)
-
+      // Cargar catálogos si es necesario
       const catPromises: any[] = []
       if (clients.length === 0) catPromises.push(fetchAllClients())
       if (products.length === 0) catPromises.push(
@@ -481,11 +494,26 @@ export default function OrdersPage() {
           .order('full_name')
       )
 
+      // Pedidos — SIN resource embedding (no hay FK constraints en Supabase)
+      const ordersPromise = supabase.from('pedidos')
+        .select('id, numero_documento, fecha_pedido, crated_at, total_venta, estado, tipo_pago, observacion, ubicacion_venta, clients_id, empleado_id')
+        .order('fecha_pedido', { ascending: false })
+        .limit(500)
+
       const allPromises = [ordersPromise, ...catPromises]
       const results = await Promise.all(allPromises)
 
       if (results[0].error) throw results[0].error
-      if (results[0].data) setOrders(results[0].data as any)
+      const rawOrders = (results[0].data as any[]) || []
+
+      // Combinar nombres de clientes y empleados manualmente
+      await ensureMaps(supabase)
+      const enriched = rawOrders.map(o => ({
+        ...o,
+        clients: o.clients_id ? (clienteMap[o.clients_id] || null) : null,
+        employees: o.empleado_id ? (empleadoMap[o.empleado_id] || null) : null,
+      }))
+      setOrders(enriched as any)
 
       let idx = 1
       if (clients.length === 0) {

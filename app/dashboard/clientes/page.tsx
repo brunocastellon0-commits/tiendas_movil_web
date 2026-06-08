@@ -22,6 +22,22 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+// Parser WKB hex → { latitude, longitude }
+function parseWKBHex(wkbHex: string | null): { latitude: number; longitude: number } | null {
+  if (!wkbHex || typeof wkbHex !== 'string' || !/^[0-9A-F]+$/i.test(wkbHex) || wkbHex.length < 42) return null
+  try {
+    const coordsStart = 18
+    const xHex = wkbHex.slice(coordsStart, coordsStart + 16)
+    const yHex = wkbHex.slice(coordsStart + 16, coordsStart + 32)
+    const hexToDouble = (hex: string) => {
+      const bytes = new Uint8Array(8)
+      for (let i = 0; i < 8; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
+      return new DataView(bytes.buffer).getFloat64(0, true)
+    }
+    return { longitude: hexToDouble(xHex), latitude: hexToDouble(yHex) }
+  } catch { return null }
+}
+
 // Tipos TypeScript
 type Client = {
   id: string
@@ -33,8 +49,7 @@ type Client = {
   phones: string | null
   credit_limit: number
   current_balance: number
-  latitude: number | null
-  longitude: number | null
+  location: string | null
   status: string
 }
 
@@ -117,7 +132,7 @@ export default function ClientsPage() {
 
       let query = supabase
         .from('clients')
-        .select('id, code, name, business_name, tax_id, address, phones, credit_limit, current_balance, latitude, longitude, status', { count: 'exact' })
+        .select('id, code, name, business_name, tax_id, address, phones, credit_limit, current_balance, location, status', { count: 'exact' })
         .order('name', { ascending: true })
         .range(from, to)
 
@@ -274,6 +289,7 @@ export default function ClientsPage() {
   }
 
   const handleEdit = (client: Client) => {
+    const coords = parseWKBHex(client.location)
     setFormData({
       code: client.code,
       name: client.name,
@@ -283,8 +299,8 @@ export default function ClientsPage() {
       phones: client.phones || '',
       credit_limit: client.credit_limit.toString(),
       current_balance: client.current_balance.toString(),
-      latitude: client.latitude,
-      longitude: client.longitude,
+      latitude: coords?.latitude ?? null,
+      longitude: coords?.longitude ?? null,
       status: client.status
     })
     setIsEditing(true)
@@ -641,7 +657,7 @@ export default function ClientsPage() {
                         <div className="text-sm text-gray-800 font-bold max-w-xs truncate" title={client.address || ''}>
                           {client.address || 'Sin dirección'}
                         </div>
-                        {client.latitude ? (
+                        {client.location ? (
                           <div className="flex items-center gap-1 text-xs text-green-600 mt-1 font-black">
                             <MapPin className="w-3.5 h-3.5" /> GPS Activo
                           </div>

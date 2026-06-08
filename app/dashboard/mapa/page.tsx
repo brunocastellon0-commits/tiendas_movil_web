@@ -151,7 +151,7 @@ export default function EmployeesMapPage() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
-      supabase.from('employees').select('id').eq('email', user.email!).single()
+      supabase.from('employees').select('id').eq('email', user.email!).maybeSingle()
         .then(({ data }) => { if (data) setCurrentEmployeeId(data.id) })
     })
   }, [])
@@ -209,7 +209,7 @@ export default function EmployeesMapPage() {
       // Visitas — filtro de fechas
       try {
         let q = supabase.from('visits')
-          .select('id, start_time, end_time, outcome, notes, duration_seconds, gps_accuracy_meters, seller_id, client_id, clients:client_id (name, legacy_id, code), employees:seller_id (full_name), check_in_location, check_out_location')
+          .select('id, start_time, end_time, outcome, notes, duration_seconds, gps_accuracy_meters, seller_id, client_id, check_in_location, check_out_location')
           .or('check_in_location.not.is.null,check_out_location.not.is.null')
           .neq('outcome', 'pending')
           .gte('start_time', filterDateFrom)
@@ -217,7 +217,25 @@ export default function EmployeesMapPage() {
           .order('start_time', { ascending: false }).limit(500)
         if (filterEmployee !== 'ALL') q = q.eq('seller_id', filterEmployee)
         const { data: vData } = await q
-        if (vData) setVisits(vData)
+        if (vData) {
+          // Enriquecer con nombres de clientes y empleados
+          const vClientIds = [...new Set(vData.map((v: any) => v.client_id).filter(Boolean))]
+          const vEmpIds = [...new Set(vData.map((v: any) => v.seller_id).filter(Boolean))]
+          const [vClientsRes, vEmpsRes] = await Promise.all([
+            vClientIds.length > 0 ? supabase.from('clients').select('id, name, legacy_id, code').in('id', vClientIds) : { data: [] },
+            vEmpIds.length > 0 ? supabase.from('employees').select('id, full_name').in('id', vEmpIds) : { data: [] },
+          ])
+          const vClientMap: Record<string, any> = {}
+          if (vClientsRes.data) vClientsRes.data.forEach((c: any) => { vClientMap[c.id] = c })
+          const vEmpMap: Record<string, any> = {}
+          if (vEmpsRes.data) vEmpsRes.data.forEach((e: any) => { vEmpMap[e.id] = e })
+          const enriched = vData.map((v: any) => ({
+            ...v,
+            clients: v.client_id ? (vClientMap[v.client_id] || null) : null,
+            employees: v.seller_id ? (vEmpMap[v.seller_id] || null) : null,
+          }))
+          setVisits(enriched)
+        }
       } catch { /* silencioso */ }
 
     } catch (err: any) {

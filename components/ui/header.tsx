@@ -28,7 +28,7 @@ export default function Header() {
           .from('employees')
           .select('full_name, email')
           .eq('id', user.id)
-          .single()
+          .maybeSingle()
         
         if (employee) {
           // Usar el email que viene directo de la BD por seguridad
