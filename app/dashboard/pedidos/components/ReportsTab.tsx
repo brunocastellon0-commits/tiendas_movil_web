@@ -181,7 +181,9 @@ export default function ReportsTab() {
           .from('pedidos')
           .select('id, numero_documento, fecha_pedido, tipo_pago, total_venta, estado, empleado_id, descuento_porcentaje, descuento_monto, clients_id')
           .eq('tipo_pago', 'Crédito')
+          .gte('fecha_pedido', new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10))
           .order('fecha_pedido', { ascending: false })
+          .limit(1000)
 
         if (selectedEmployee !== 'ALL') {
           query = query.eq('empleado_id', selectedEmployee)

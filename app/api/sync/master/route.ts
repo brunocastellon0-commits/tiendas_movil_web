@@ -67,20 +67,27 @@ export async function POST(req: Request) {
 
         // 3. Guardar detalles del pedido en Supabase
         if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+          const codigos = data.items.map((item: any) => cleanString(item.codigo_producto)).filter(Boolean);
+          const idMap = new Map<string, string>();
+          if (codigos.length > 0) {
+            // 1 sola consulta batch en lugar de una por producto (N+1)
+            const { data: productos } = await supabase
+              .from('productos')
+              .select('id, codigo_producto')
+              .in('codigo_producto', codigos);
+            if (productos) productos.forEach((p: any) => idMap.set(p.codigo_producto, p.id));
+          }
+
           const detalles = [];
 
           for (const item of data.items) {
             const codigoPrd = cleanString(item.codigo_producto);
-            const { data: producto } = await supabase
-              .from('productos')
-              .select('id')
-              .eq('codigo_producto', codigoPrd)
-              .single();
+            const productoId = idMap.get(codigoPrd);
 
-            if (producto) {
+            if (productoId) {
               detalles.push({
                 pedido_id:         pedidoGuardado.id,
-                producto_id:       producto.id,
+                producto_id:       productoId,
                 cantidad:          cleanFloat(item.cantidad),
                 precio_unitario:   cleanFloat(item.precio),
                 subtotal:          parseFloat((cleanFloat(item.cantidad) * cleanFloat(item.precio)).toFixed(2)),

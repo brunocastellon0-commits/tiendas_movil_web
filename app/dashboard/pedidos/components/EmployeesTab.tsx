@@ -263,12 +263,14 @@ export default function EmployeesTab() {
           .gte('fecha_pedido', dateRange.start)
           .lte('fecha_pedido', dateRange.end)
           .order('fecha_pedido', { ascending: false })
+          .limit(1000)
 
         let visitsQuery = supabase
           .from('visits')
           .select('id, start_time, outcome, seller_id, notes, clients:client_id (name)')
           .gte('start_time', dateRange.start)
           .lte('start_time', dateRange.end)
+          .limit(1000)
 
         if (selectedEmployee !== 'ALL') {
           ordersQuery = ordersQuery.eq('empleado_id', selectedEmployee)

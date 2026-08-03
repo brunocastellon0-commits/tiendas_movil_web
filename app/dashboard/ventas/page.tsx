@@ -83,7 +83,6 @@ type Order = {
   id: string
   numero_documento: string
   fecha_pedido: string
-  crated_at: string
   total_venta: number
   estado: string
   tipo_pago: string
@@ -220,7 +219,7 @@ export default function VentasPage() {
     setLoading(true)
     try {
       const { data: raw } = await supabase.from('pedidos')
-        .select('id, numero_documento, fecha_pedido, crated_at, total_venta, estado, tipo_pago, observacion, clients_id, empleado_id')
+        .select('id, numero_documento, fecha_pedido, total_venta, estado, tipo_pago, observacion, clients_id, empleado_id')
         .order('fecha_pedido', { ascending: false })
         .limit(500)
       if (raw) {

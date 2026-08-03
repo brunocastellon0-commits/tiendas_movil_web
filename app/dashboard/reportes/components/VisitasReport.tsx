@@ -24,10 +24,19 @@ export default function VisitasReport() {
       setLoading(true)
       setError(null)
       try {
+        // Solo necesitamos los últimos 12 meses para los KPIs y gráficos
+        const since = new Date()
+        since.setFullYear(since.getFullYear() - 1)
+        const sinceISO = since.toISOString()
+
         const { data: visits, error: err } = await supabase
           .from('visits')
           .select('id, start_time, created_at, outcome')
           .neq('outcome', 'pending')
+          .not('start_time', 'is', null)
+          .gte('start_time', sinceISO)
+          .order('start_time', { ascending: false })
+          .limit(5000)
 
         if (err) throw err
 

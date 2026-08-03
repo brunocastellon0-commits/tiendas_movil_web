@@ -21,6 +21,7 @@ export default function MapLoader(props: {
   visits?: any[]
   pedidos?: any[]
   routePoints?: any[]
+  now?: number
   onVisitClick?: (visit: any) => void
   onPedidoClick?: (pedido: any) => void
   onRoutePointClick?: (point: any) => void

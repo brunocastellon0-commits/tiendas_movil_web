@@ -1,6 +1,7 @@
 'use client'
 
 import MapLoader from '@/components/ui/Maploader'
+import VisitasReporte from './components/VisitasReporte'
 import { shareMyLocation } from '@/services/locationService'
 import { createClient } from '@/utils/supabase/client'
 import {
@@ -12,12 +13,12 @@ import {
     Map as MapIcon,
     MapPin,
     RefreshCw,
+    Table2,
     Users,
     X,
     XCircle,
-    Info,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 // ─── TIPOS ──────────────────────────────────────────────────────────────────
 type EmployeeLocation = {
@@ -147,6 +148,16 @@ export default function EmployeesMapPage() {
   const [showVisitModal, setShowVisitModal] = useState(false)
   const [visits, setVisits] = useState<any[]>([])
 
+  // ── Vista (mapa | reportes)
+  const [view, setView] = useState<'mapa' | 'reportes'>('mapa')
+
+  // ── Reloj en vivo (refresca tiempos relativos cada 30s)
+  const [now, setNow] = useState<number>(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(id)
+  }, [])
+
   // ─── INIT: empleado actual ──────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -162,26 +173,25 @@ export default function EmployeesMapPage() {
       .then(({ data }) => { if (data) setEmployees(data) })
   }, [])
 
-  // ─── Cargar mapa base ────────────────────────────────────────────────────
-  const fetchMapBase = async () => {
+  // ─── Cargar empleados con ubicación (no depende de filtros) ─────────────
+  const fetchEmployees = useCallback(async () => {
     try {
-      setLoadingMap(true)
-      setError(null)
-
       // Empleados con ubicación
       const { data: empData } = await supabase
         .from('employees')
         .select('id, full_name, location, job_title, created_at, gps_trust_score')
         .order('created_at', { ascending: false })
 
-      // Última ubicación conocida de cada empleado desde location_history
+      // Solo la ubicación más reciente de cada empleado (últimas 24h, máx 200)
       let latestHistory: any[] = []
       try {
+        const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
         const { data: hist } = await supabase
           .from('location_history')
           .select('employee_id, location, created_at')
+          .gte('created_at', since)
           .order('created_at', { ascending: false })
-          .limit(1000)
+          .limit(200)
 
         if (hist) {
           // Tomar solo el último registro por empleado
@@ -205,47 +215,61 @@ export default function EmployeesMapPage() {
         }).filter(e => e.latitude !== 0 && e.longitude !== 0 && !isNaN(e.latitude) && !isNaN(e.longitude))
         setLocations(processed)
       }
-
-      // Visitas — filtro de fechas
-      try {
-        let q = supabase.from('visits')
-          .select('id, start_time, end_time, outcome, notes, duration_seconds, gps_accuracy_meters, seller_id, client_id, check_in_location, check_out_location')
-          .or('check_in_location.not.is.null,check_out_location.not.is.null')
-          .neq('outcome', 'pending')
-          .gte('start_time', filterDateFrom)
-          .lte('start_time', filterDateTo + 'T23:59:59')
-          .order('start_time', { ascending: false }).limit(500)
-        if (filterEmployee !== 'ALL') q = q.eq('seller_id', filterEmployee)
-        const { data: vData } = await q
-        if (vData) {
-          // Enriquecer con nombres de clientes y empleados
-          const vClientIds = [...new Set(vData.map((v: any) => v.client_id).filter(Boolean))]
-          const vEmpIds = [...new Set(vData.map((v: any) => v.seller_id).filter(Boolean))]
-          const [vClientsRes, vEmpsRes] = await Promise.all([
-            vClientIds.length > 0 ? supabase.from('clients').select('id, name, legacy_id, code').in('id', vClientIds) : { data: [] },
-            vEmpIds.length > 0 ? supabase.from('employees').select('id, full_name').in('id', vEmpIds) : { data: [] },
-          ])
-          const vClientMap: Record<string, any> = {}
-          if (vClientsRes.data) vClientsRes.data.forEach((c: any) => { vClientMap[c.id] = c })
-          const vEmpMap: Record<string, any> = {}
-          if (vEmpsRes.data) vEmpsRes.data.forEach((e: any) => { vEmpMap[e.id] = e })
-          const enriched = vData.map((v: any) => ({
-            ...v,
-            clients: v.client_id ? (vClientMap[v.client_id] || null) : null,
-            employees: v.seller_id ? (vEmpMap[v.seller_id] || null) : null,
-          }))
-          setVisits(enriched)
-        }
-      } catch { /* silencioso */ }
-
     } catch (err: any) {
       setError(err.message || 'Error al cargar datos del mapa')
-    } finally {
-      setLoadingMap(false)
     }
-  }
+  }, [])
 
-  useEffect(() => { fetchMapBase() }, [filterEmployee, filterDateFrom, filterDateTo])
+  // ─── Cargar visitas (solo depende de los filtros) ────────────────────────
+  const fetchVisits = useCallback(async () => {
+    try {
+      let q = supabase.from('visits')
+        .select('id, start_time, end_time, outcome, notes, duration_seconds, gps_accuracy_meters, seller_id, client_id, check_in_location, check_out_location')
+        .or('check_in_location.not.is.null,check_out_location.not.is.null')
+        .neq('outcome', 'pending')
+        .gte('start_time', filterDateFrom)
+        .lte('start_time', filterDateTo + 'T23:59:59')
+        .order('start_time', { ascending: false }).limit(500)
+      if (filterEmployee !== 'ALL') q = q.eq('seller_id', filterEmployee)
+      const { data: vData } = await q
+      if (vData) {
+        // Enriquecer con nombres de clientes y empleados
+        const vClientIds = [...new Set(vData.map((v: any) => v.client_id).filter(Boolean))]
+        const vEmpIds = [...new Set(vData.map((v: any) => v.seller_id).filter(Boolean))]
+        const [vClientsRes, vEmpsRes] = await Promise.all([
+          vClientIds.length > 0 ? supabase.from('clients').select('id, name, legacy_id, code').in('id', vClientIds) : { data: [] },
+          vEmpIds.length > 0 ? supabase.from('employees').select('id, full_name').in('id', vEmpIds) : { data: [] },
+        ])
+        const vClientMap: Record<string, any> = {}
+        if (vClientsRes.data) vClientsRes.data.forEach((c: any) => { vClientMap[c.id] = c })
+        const vEmpMap: Record<string, any> = {}
+        if (vEmpsRes.data) vEmpsRes.data.forEach((e: any) => { vEmpMap[e.id] = e })
+        const enriched = vData.map((v: any) => ({
+          ...v,
+          clients: v.client_id ? (vClientMap[v.client_id] || null) : null,
+          employees: v.seller_id ? (vEmpMap[v.seller_id] || null) : null,
+        }))
+        setVisits(enriched)
+      }
+    } catch { /* silencioso */ }
+  }, [filterDateFrom, filterDateTo, filterEmployee])
+
+  // Carga completa (montaje inicial o botón Actualizar)
+  const fetchMapBase = useCallback(async () => {
+    setLoadingMap(true)
+    setError(null)
+    await Promise.all([fetchEmployees(), fetchVisits()])
+    setLoadingMap(false)
+  }, [fetchEmployees, fetchVisits])
+
+  useEffect(() => {
+    const load = async () => { await fetchEmployees() }
+    load()
+  }, [fetchEmployees])
+  useEffect(() => {
+    const load = async () => { await fetchVisits() }
+    load()
+  }, [fetchVisits, filterEmployee, filterDateFrom, filterDateTo])
 
   // ─── Compartir ubicación ──────────────────────────────────────────────────
   const handleShareLocation = async () => {
@@ -258,9 +282,9 @@ export default function EmployeesMapPage() {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
-  const getRelativeTime = (ts?: string) => {
+  const getRelativeTime = (ts?: string, ref = now) => {
     if (!ts) return 'Sin actualizar'
-    const diffMins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000)
+    const diffMins = Math.floor((ref - new Date(ts).getTime()) / 60000)
     if (diffMins < 1) return 'Ahora mismo'
     if (diffMins < 60) return `Hace ${diffMins} min`
     const h = Math.floor(diffMins / 60)
@@ -285,8 +309,26 @@ export default function EmployeesMapPage() {
 
   const mapEmployees = showEmployees ? scoreFilteredLocations.map(emp => ({
     ...emp, latitude: emp.latitude!, longitude: emp.longitude!,
-    last_update: getRelativeTime(emp.created_at)
+    last_update: getRelativeTime(emp.created_at, now),
+    lastUpdateTs: emp.created_at
   })) : []
+
+  // ── Empleados con señal perdida (sin GPS > 1h) ──────────────────────────
+  const staleEmployees = useMemo(() => {
+    return scoreFilteredLocations
+      .map(emp => {
+        const minutes = emp.created_at
+          ? Math.floor((now - new Date(emp.created_at).getTime()) / 60000)
+          : Number.MAX_SAFE_INTEGER
+        return { ...emp, minutes: Number.isFinite(minutes) ? minutes : Number.MAX_SAFE_INTEGER }
+      })
+      .filter(emp => emp.minutes > 60)
+      .sort((a, b) => b.minutes - a.minutes)
+  }, [scoreFilteredLocations, now])
+
+  const liveCount = scoreFilteredLocations.filter(e =>
+    e.created_at && (now - new Date(e.created_at).getTime()) < 5 * 60000
+  ).length
 
   const hasActiveFilters = filterEmployee !== 'ALL' || filterDateFrom !== todayStr() || filterDateTo !== todayStr()
 
@@ -313,6 +355,16 @@ export default function EmployeesMapPage() {
             </div>
           </div>
           <div className="flex gap-2">
+            <div className="flex bg-green-50 border-2 border-green-100 rounded-2xl p-1">
+              <button onClick={() => setView('mapa')}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-sm transition-all ${view === 'mapa' ? 'bg-white text-green-700 shadow border border-green-200' : 'text-gray-500 hover:text-green-700'}`}>
+                <MapPin className="w-4 h-4" /> Mapa
+              </button>
+              <button onClick={() => setView('reportes')}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-sm transition-all ${view === 'reportes' ? 'bg-white text-green-700 shadow border border-green-200' : 'text-gray-500 hover:text-green-700'}`}>
+                <Table2 className="w-4 h-4" /> Reportes
+              </button>
+            </div>
             <button onClick={handleShareLocation} disabled={sharingLocation || !currentEmployeeId}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-sm transition-all shadow ${sharingLocation || !currentEmployeeId ? 'bg-gray-300 cursor-not-allowed text-white' : shareSuccess ? 'bg-green-500 text-white' : 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:scale-105 text-white'}`}>
               {sharingLocation ? <Loader2 className="w-4 h-4 animate-spin" /> : shareSuccess ? <Check className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
@@ -333,15 +385,48 @@ export default function EmployeesMapPage() {
           const withoutLoc = employees.length - withLoc
           if (employees.length === 0) return null
           return (
-            <div className="bg-white p-3 rounded-2xl shadow-lg border-2 border-green-100 flex items-center gap-3 text-sm">
-              <Info className="w-4 h-4 text-green-600 flex-shrink-0" />
+            <div className="bg-white p-3 rounded-2xl shadow-lg border-2 border-green-100 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <span className="flex items-center gap-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                </span>
+                <span className="font-medium text-gray-600"><b className="text-green-700">{liveCount}</b> en vivo</span>
+              </span>
               <span className="font-medium text-gray-600">
-                <b className="text-green-700">{withLoc}</b> empleados con ubicación
+                <b className="text-green-700">{withLoc}</b> con ubicación
                 {withoutLoc > 0 && <span className="text-amber-600"> · <b>{withoutLoc}</b> sin ubicación</span>}
               </span>
+              {staleEmployees.length > 0 && (
+                <span className="text-red-600 font-medium">· <b>{staleEmployees.length}</b> sin señal</span>
+              )}
             </div>
           )
         })()}
+
+        {/* Alerta de empleados sin señal */}
+        {staleEmployees.length > 0 && (
+          <div className="bg-amber-50 border-2 border-amber-200 text-amber-800 p-4 rounded-2xl shadow-lg">
+            <div className="flex items-center gap-2 font-bold text-sm mb-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              Empleados sin actualización de ubicación (más de 1 hora)
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {staleEmployees.slice(0, 8).map(emp => (
+                <span key={emp.id} className="inline-flex items-center gap-1.5 bg-white border border-amber-200 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-700 shadow-sm">
+                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  {emp.full_name}
+                  <span className="text-amber-600 font-semibold">({getRelativeTime(emp.created_at, now)})</span>
+                </span>
+              ))}
+              {staleEmployees.length > 8 && (
+                <span className="inline-flex items-center px-3 py-1.5 text-xs font-bold text-gray-500">
+                  +{staleEmployees.length - 8} más
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {shareError && (
           <div className="bg-red-50 border-2 border-red-300 text-red-700 p-3 rounded-2xl flex items-center gap-2 text-sm">
@@ -440,7 +525,17 @@ export default function EmployeesMapPage() {
           </div>
         )}
 
-        {/* ── MAPA ── */}
+        {/* ── MAPA / REPORTES ── */}
+        {view === 'reportes' ? (
+          <VisitasReporte
+            visits={visits}
+            employees={employees}
+            filterFrom={filterDateFrom}
+            filterTo={filterDateTo}
+            filterEmployee={filterEmployee}
+            loading={loadingMap}
+          />
+        ) : (
         <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
           <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-5 py-3 border-b-2 border-green-200 flex items-center justify-between">
             <div>
@@ -460,6 +555,7 @@ export default function EmployeesMapPage() {
               visits={showVisits ? visits : []}
               pedidos={[]}
               routePoints={[]}
+              now={now}
               onVisitClick={(v) => { setSelectedVisit(v); setShowVisitModal(true) }}
               onPedidoClick={() => {}}
               creatingRoutePoint={false}
@@ -469,6 +565,7 @@ export default function EmployeesMapPage() {
             />
           </div>
         </div>
+        )}
 
       </div>
 

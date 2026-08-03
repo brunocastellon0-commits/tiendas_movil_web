@@ -96,7 +96,6 @@ type Order = {
   id: string
   numero_documento: string
   fecha_pedido: string
-  crated_at: string
   total_venta: number
   estado: string
   tipo_pago: string
@@ -496,7 +495,7 @@ export default function OrdersPage() {
 
       // Pedidos — SIN resource embedding (no hay FK constraints en Supabase)
       const ordersPromise = supabase.from('pedidos')
-        .select('id, numero_documento, fecha_pedido, crated_at, total_venta, estado, tipo_pago, observacion, ubicacion_venta, clients_id, empleado_id')
+        .select('id, numero_documento, fecha_pedido, total_venta, estado, tipo_pago, observacion, ubicacion_venta, clients_id, empleado_id')
         .order('fecha_pedido', { ascending: false })
         .limit(500)
 

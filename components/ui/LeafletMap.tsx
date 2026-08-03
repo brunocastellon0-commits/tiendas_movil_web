@@ -13,6 +13,7 @@ type EmployeeLocation = {
   longitude: number
   job_title: string
   last_update: string
+  lastUpdateTs?: string
   gps_trust_score?: number | null
   is_active?: boolean
 }
@@ -94,22 +95,39 @@ function RoutePointCreator({ active, onPointCreated }: { active: boolean, onPoin
 }
 
 // ─── ICONOS ─────────────────────────────────────────────────────────────────
-const createEmployeeIcon = (fullName: string, score: number, isActive: boolean) => {
+type LiveStatus = 'live' | 'online' | 'offline'
+
+function getEmployeeStatus(lastUpdateTs: string | undefined, now: number): LiveStatus {
+  if (!lastUpdateTs) return 'offline'
+  const diffMins = Math.floor((now - new Date(lastUpdateTs).getTime()) / 60000)
+  if (diffMins < 5) return 'live'
+  if (diffMins < 60) return 'online'
+  return 'offline'
+}
+
+const createEmployeeIcon = (fullName: string, score: number, status: LiveStatus) => {
   const borderColor = score < 70 ? '#dc2626' : score < 90 ? '#d97706' : '#16a34a'
-  const pulse = isActive ? `<div style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid white;animation:pulse 2s infinite;z-index:10"></div>` : ''
+  const dimmed = status === 'offline'
+  const markerColor = dimmed ? '#9ca3af' : borderColor
+  const statusDot = status === 'live'
+    ? `<div style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid white;animation:pulse 2s infinite;z-index:10"></div>`
+    : status === 'online'
+      ? `<div style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:#16a34a;border:2px solid white;z-index:10"></div>`
+      : `<div style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:#9ca3af;border:2px solid white;z-index:10"></div>`
+  const statusLabel = status === 'live' ? 'En vivo' : status === 'online' ? 'En línea' : 'Sin señal'
   return L.divIcon({
     className: 'employee-marker',
-    html: `<div class="marker-container" style="position:relative;display:flex;flex-direction:column;align-items:center">
-      <div class="marker-mini" style="width:18px;height:18px;background:${borderColor};border-radius:50%;border:3px solid white;box-shadow:0 2px 8px ${borderColor}99;transition:all 0.25s ease">
-        <div class="marker-expanded" style="position:absolute;top:-16px;left:-16px;width:50px;height:50px;background:linear-gradient(135deg,white,#f8fafc);border-radius:50%;border:3px solid ${borderColor};box-shadow:0 6px 20px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all 0.25s ease;transform:scale(0.5)">
-          <span style="color:${borderColor};font-weight:900;font-size:20px;font-family:sans-serif">${fullName.charAt(0).toUpperCase()}</span>
+    html: `<div class="marker-container" style="position:relative;display:flex;flex-direction:column;align-items:center;${dimmed ? 'opacity:0.55;filter:grayscale(0.8);' : ''}">
+      <div class="marker-mini" style="width:18px;height:18px;background:${markerColor};border-radius:50%;border:3px solid white;box-shadow:0 2px 8px ${markerColor}99;transition:all 0.25s ease">
+        <div class="marker-expanded" style="position:absolute;top:-16px;left:-16px;width:50px;height:50px;background:linear-gradient(135deg,white,#f8fafc);border-radius:50%;border:3px solid ${markerColor};box-shadow:0 6px 20px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:all 0.25s ease;transform:scale(0.5)">
+          <span style="color:${markerColor};font-weight:900;font-size:20px;font-family:sans-serif">${fullName.charAt(0).toUpperCase()}</span>
         </div>
       </div>
-      <div class="marker-tooltip" style="position:absolute;top:-42px;left:50%;transform:translateX(-50%) translateY(8px);background:white;border:2px solid ${borderColor};border-radius:10px;padding:6px 10px;box-shadow:0 4px 12px rgba(0,0,0,0.25);opacity:0;visibility:hidden;transition:all 0.25s ease;white-space:nowrap;z-index:5">
+      <div class="marker-tooltip" style="position:absolute;top:-42px;left:50%;transform:translateX(-50%) translateY(8px);background:white;border:2px solid ${markerColor};border-radius:10px;padding:6px 10px;box-shadow:0 4px 12px rgba(0,0,0,0.25);opacity:0;visibility:hidden;transition:all 0.25s ease;white-space:nowrap;z-index:5">
         <div style="font-weight:900;font-size:12px;color:#1f2937">${fullName}</div>
-        <div style="font-size:9px;color:#6b7280">GPS: ${score}% · ${isActive ? 'En línea' : 'Desconectado'}</div>
+        <div style="font-size:9px;color:#6b7280">GPS: ${score}% · ${statusLabel}</div>
       </div>
-      ${pulse}
+      ${statusDot}
     </div>
     <style>
       .employee-marker:hover .marker-mini {
@@ -221,6 +239,7 @@ function LeafletMap({
   visits = [],
   pedidos = [],
   routePoints = [],
+  now,
   onVisitClick,
   onPedidoClick,
   onRoutePointClick,
@@ -234,6 +253,7 @@ function LeafletMap({
   visits?: any[]
   pedidos?: PedidoMarker[]
   routePoints?: RoutePoint[]
+  now?: number
   onVisitClick?: (visit: any) => void
   onPedidoClick?: (pedido: PedidoMarker) => void
   onRoutePointClick?: (point: RoutePoint) => void
@@ -247,6 +267,7 @@ function LeafletMap({
     : [-17.3935, -66.1570]
 
   const markerRefs = useRef<{ [key: string]: L.Marker }>({})
+  const nowRef = now ?? 0
 
   useEffect(() => {
     if (selectedEmployeeId && markerRefs.current[selectedEmployeeId]) {
@@ -317,11 +338,15 @@ function LeafletMap({
           />
 
           {/* ── MARCADORES DE EMPLEADOS ── */}
-          {employees.map(emp => (
+          {employees.map(emp => {
+            const status = getEmployeeStatus(emp.lastUpdateTs, nowRef)
+            const statusColor = status === 'live' ? '#16a34a' : status === 'online' ? '#65a30d' : '#9ca3af'
+            const statusLabel = status === 'live' ? '● En vivo' : status === 'online' ? '● En línea' : '○ Sin señal'
+            return (
             <Marker
               key={emp.id}
               position={[emp.latitude, emp.longitude]}
-              icon={createEmployeeIcon(emp.full_name, emp.gps_trust_score ?? 100, emp.is_active ?? false)}
+              icon={createEmployeeIcon(emp.full_name, emp.gps_trust_score ?? 100, status)}
               ref={ref => { if (ref) markerRefs.current[emp.id] = ref }}
             >
               <Popup>
@@ -329,7 +354,7 @@ function LeafletMap({
                   <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 4 }}>{emp.full_name}</div>
                   <span style={{ fontSize: 11, background: '#f3f4f6', padding: '2px 8px', borderRadius: 20 }}>{emp.job_title}</span>
                   <div style={{ marginTop: 8, fontSize: 11, color: '#6b7280' }}>
-                    <div>Estado: <b style={{ color: emp.is_active ? '#16a34a' : '#9ca3af' }}>{emp.is_active ? '● En línea' : '○ Desconectado'}</b></div>
+                    <div>Estado: <b style={{ color: statusColor }}>{statusLabel}</b></div>
                     <div>GPS Score: <b>{emp.gps_trust_score ?? 100}%</b></div>
                     <div style={{ fontFamily: 'monospace', fontSize: 10 }}>{emp.latitude.toFixed(6)}, {emp.longitude.toFixed(6)}</div>
                     <div>Actualizado: {emp.last_update}</div>
@@ -337,7 +362,8 @@ function LeafletMap({
                 </div>
               </Popup>
             </Marker>
-          ))}
+            )
+          })}
 
           {/* ── MARCADORES DE VISITAS ── */}
           {processedVisits.map((visit: any) => (
@@ -456,6 +482,7 @@ function visitsChanged(prev: any[] | undefined, next: any[] | undefined): boolea
 export default memo(LeafletMap, (prev, next) => {
   if (prev.selectedEmployeeId !== next.selectedEmployeeId) return false
   if (prev.creatingRoutePoint !== next.creatingRoutePoint) return false
+  if (prev.now !== next.now) return false
   if (employeeLocationChanged(prev.employees, next.employees)) return false
   if (visitsChanged(prev.visits, next.visits)) return false
   if ((prev.pedidos?.length ?? 0) !== (next.pedidos?.length ?? 0)) return false
