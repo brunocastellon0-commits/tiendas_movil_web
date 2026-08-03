@@ -1,8 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createClient } from '@/utils/supabase/client'
 import {
   AlertCircle,
+  CalendarDays,
   CheckCircle2,
   Download,
   Loader2,
@@ -10,40 +12,20 @@ import {
   Search,
   Store,
   TrendingUp,
+  Users,
   XCircle,
 } from 'lucide-react'
 
-// ─── PARSER WKB/GeoJSON (mismo formato usado en el mapa) ─────────────────────
-function parseWKBHex(wkbHex: string): { latitude: number; longitude: number } | null {
-  try {
-    const coordsStart = 18
-    const xHex = wkbHex.slice(coordsStart, coordsStart + 16)
-    const yHex = wkbHex.slice(coordsStart + 16, coordsStart + 32)
-    const hexToDouble = (hex: string) => {
-      const bytes = new Uint8Array(8)
-      for (let i = 0; i < 8; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
-      return new DataView(bytes.buffer).getFloat64(0, true)
-    }
-    return { longitude: hexToDouble(xHex), latitude: hexToDouble(yHex) }
-  } catch { return null }
-}
-
-function parseLocation(loc: any): { latitude: number | null; longitude: number | null } {
-  if (!loc) return { latitude: null, longitude: null }
-  if (typeof loc === 'string' && loc.length > 20 && /^[0-9A-F]+$/i.test(loc)) {
-    const r = parseWKBHex(loc)
-    return r ?? { latitude: null, longitude: null }
-  }
-  if (typeof loc === 'object' && loc.type === 'Point' && Array.isArray(loc.coordinates))
-    return { longitude: loc.coordinates[0], latitude: loc.coordinates[1] }
-  if (typeof loc === 'string') {
-    const m = loc.match(/POINT\s*\(\s*([\-\d.]+)\s+([\-\d.]+)\s*\)/i)
-    if (m) return { longitude: parseFloat(m[1]), latitude: parseFloat(m[2]) }
-  }
-  return { latitude: null, longitude: null }
-}
-
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
+function todayStr() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function defaultFrom() {
+  const d = new Date(Date.now() - 30 * 86400000)
+  return d.toISOString().slice(0, 10)
+}
+
 function outcomeInfo(outcome: string): { label: string; badge: string } {
   switch (outcome) {
     case 'sale':
@@ -76,8 +58,8 @@ function formatDate(ts?: string) {
 // ─── CSV ─────────────────────────────────────────────────────────────────────
 function toCsv(rows: any[]): string {
   const headers = [
-    'Fecha', 'Vendedor', 'Cliente', 'Codigo', 'Resultado',
-    'Check-In', 'Check-Out', 'Duracion', 'Precision GPS (m)', 'Notas', 'Latitud', 'Longitud',
+    'Fecha', 'Vendedor', 'Cliente', 'Codigo', 'Inicio Visita', 'Fin Visita',
+    'Duracion', 'Resultado', 'Precision GPS (m)', 'Notas',
   ]
   const esc = (val: any) => {
     const s = val == null ? '' : String(val)
@@ -89,36 +71,87 @@ function toCsv(rows: any[]): string {
     v.employees?.full_name || 'N/A',
     v.clients?.name || 'N/A',
     v.clients?.code || v.clients?.legacy_id || '',
-    outcomeInfo(v.outcome).label,
     v.start_time ? new Date(v.start_time).toLocaleString('es-BO') : 'N/A',
     v.end_time ? new Date(v.end_time).toLocaleString('es-BO') : 'N/A',
     v.duration_seconds != null ? formatDuration(v.duration_seconds) : 'N/A',
+    outcomeInfo(v.outcome).label,
     v.gps_accuracy_meters != null ? Number(v.gps_accuracy_meters).toFixed(1) : 'N/A',
     v.notes || '',
-    (parseLocation(v.check_in_location).latitude ?? '') + '',
-    (parseLocation(v.check_in_location).longitude ?? '') + '',
   ].map(esc).join(','))
   return '\uFEFF' + [headers.join(','), ...lines].join('\n')
 }
 
 // ─── COMPONENTE ─────────────────────────────────────────────────────────────
-export default function VisitasReporte({
-  visits,
-  employees,
-  filterFrom,
-  filterTo,
-  filterEmployee,
-  loading = false,
-}: {
-  visits: any[]
-  employees: { id: string; full_name: string }[]
-  filterFrom: string
-  filterTo: string
-  filterEmployee: string
-  loading?: boolean
-}) {
+export default function VisitasReporte() {
+  const supabase = createClient()
+
+  const [visits, setVisits] = useState<any[]>([])
+  const [employees, setEmployees] = useState<{ id: string; full_name: string }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // ── Filtros propios (independientes del mapa) ──
+  const [filterEmployee, setFilterEmployee] = useState<string>('ALL')
+  const [filterFrom, setFilterFrom] = useState<string>(defaultFrom)
+  const [filterTo, setFilterTo] = useState<string>(todayStr)
+
+  // ── Filtros de la tabla ──
   const [searchTerm, setSearchTerm] = useState('')
   const [resultFilter, setResultFilter] = useState<'ALL' | 'sale' | 'no_sale' | 'closed'>('ALL')
+
+  const fetchVisits = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      let q = supabase.from('visits')
+        .select('id, start_time, end_time, outcome, notes, duration_seconds, gps_accuracy_meters, seller_id, client_id, check_in_location, check_out_location')
+        .neq('outcome', 'pending')
+        .gte('start_time', filterFrom)
+        .lte('start_time', filterTo + 'T23:59:59')
+        .order('start_time', { ascending: false })
+        .limit(1000)
+      if (filterEmployee !== 'ALL') q = q.eq('seller_id', filterEmployee)
+
+      const { data: vData } = await q
+      if (vData) {
+        const vClientIds = [...new Set(vData.map((v: any) => v.client_id).filter(Boolean))]
+        const vEmpIds = [...new Set(vData.map((v: any) => v.seller_id).filter(Boolean))]
+        const [vClientsRes, vEmpsRes] = await Promise.all([
+          vClientIds.length > 0 ? supabase.from('clients').select('id, name, legacy_id, code').in('id', vClientIds) : { data: [] },
+          vEmpIds.length > 0 ? supabase.from('employees').select('id, full_name').in('id', vEmpIds) : { data: [] },
+        ])
+        const vClientMap: Record<string, any> = {}
+        if (vClientsRes.data) vClientsRes.data.forEach((c: any) => { vClientMap[c.id] = c })
+        const vEmpMap: Record<string, any> = {}
+        if (vEmpsRes.data) vEmpsRes.data.forEach((e: any) => { vEmpMap[e.id] = e })
+        setVisits(vData.map((v: any) => ({
+          ...v,
+          clients: v.client_id ? (vClientMap[v.client_id] || null) : null,
+          employees: v.seller_id ? (vEmpMap[v.seller_id] || null) : null,
+        })))
+      } else {
+        setVisits([])
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Error al cargar las visitas')
+      setVisits([])
+    } finally {
+      setLoading(false)
+    }
+  }, [supabase, filterEmployee, filterFrom, filterTo])
+
+  useEffect(() => {
+    const load = async () => { await fetchVisits() }
+    load()
+  }, [fetchVisits])
+
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase.from('employees').select('id, full_name').order('full_name')
+      if (data) setEmployees(data)
+    }
+    load()
+  }, [supabase])
 
   const stats = useMemo(() => {
     const total = visits.length
@@ -158,15 +191,6 @@ export default function VisitasReporte({
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }
-
-  if (loading) {
-    return (
-      <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 p-12 flex flex-col items-center justify-center gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-green-600" />
-        <p className="text-gray-500 text-sm font-medium">Cargando reporte...</p>
-      </div>
-    )
   }
 
   return (
@@ -210,14 +234,41 @@ export default function VisitasReporte({
               {employeeName} · {filterFrom} → {filterTo}
             </p>
           </div>
-          <button onClick={handleDownload}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-sm transition-all shadow bg-gradient-to-r from-green-500 to-emerald-600 hover:scale-105 text-white">
+          <button onClick={handleDownload} disabled={filteredVisits.length === 0}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-sm transition-all shadow ${filteredVisits.length === 0 ? 'bg-gray-300 cursor-not-allowed text-white' : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:scale-105 text-white'}`}>
             <Download className="w-4 h-4" /> Descargar CSV
           </button>
         </div>
 
+        {/* Filtros */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5" /> Vendedor
+            </label>
+            <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)}
+              className="w-full px-3 py-2.5 text-sm text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 font-medium">
+              <option value="ALL">Todos los Vendedores</option>
+              {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1">
+              <CalendarDays className="w-3.5 h-3.5" /> Desde
+            </label>
+            <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} max={filterTo}
+              className="w-full px-3 py-2.5 text-sm text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 font-medium" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1">
+              <CalendarDays className="w-3.5 h-3.5" /> Hasta
+            </label>
+            <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} min={filterFrom}
+              className="w-full px-3 py-2.5 text-sm text-gray-900 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 font-medium" />
+          </div>
+        </div>
+
         <div className="flex flex-col sm:flex-row gap-3">
-          {/* Buscador */}
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -228,7 +279,6 @@ export default function VisitasReporte({
               className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 font-medium"
             />
           </div>
-          {/* Filtro resultado */}
           <div className="flex p-1 bg-gray-100 rounded-xl">
             {([
               { key: 'ALL', label: 'Todos' },
@@ -245,68 +295,73 @@ export default function VisitasReporte({
         </div>
       </div>
 
+      {/* Carga / Error */}
+      {loading && (
+        <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 p-12 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+          <p className="text-gray-500 text-sm font-medium">Cargando visitas...</p>
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="bg-red-50 border-2 border-red-300 text-red-700 p-4 rounded-3xl flex items-start gap-2 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" /> {error}
+        </div>
+      )}
+
       {/* Tabla */}
-      <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="bg-gradient-to-r from-green-50 to-emerald-50 text-xs uppercase tracking-wider text-gray-500 font-black border-b-2 border-green-100">
-                <th className="px-4 py-3">Fecha</th>
-                <th className="px-4 py-3">Vendedor</th>
-                <th className="px-4 py-3">Cliente</th>
-                <th className="px-4 py-3 text-center">Resultado</th>
-                <th className="px-4 py-3">Check-In</th>
-                <th className="px-4 py-3">Duración</th>
-                <th className="px-4 py-3 text-right">GPS (m)</th>
-                <th className="px-4 py-3">Notas</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {filteredVisits.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400 font-medium">
-                    <MapPin className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                    No hay tiendas atendidas con los filtros seleccionados.
-                  </td>
+      {!loading && !error && (
+        <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="bg-gradient-to-r from-green-50 to-emerald-50 text-xs uppercase tracking-wider text-gray-500 font-black border-b-2 border-green-100">
+                  <th className="px-4 py-3">Cliente</th>
+                  <th className="px-4 py-3">Código</th>
+                  <th className="px-4 py-3">Vendedor</th>
+                  <th className="px-4 py-3">Inicio Visita</th>
+                  <th className="px-4 py-3">Fin Visita</th>
+                  <th className="px-4 py-3">Duración</th>
+                  <th className="px-4 py-3 text-center">Resultado</th>
+                  <th className="px-4 py-3">Notas</th>
                 </tr>
-              )}
-              {filteredVisits.map(v => {
-                const oi = outcomeInfo(v.outcome)
-                return (
-                  <tr key={v.id} className="hover:bg-green-50/40 transition-colors">
-                    <td className="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">
-                      {formatDate(v.start_time)}
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredVisits.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-12 text-center text-gray-400 font-medium">
+                      <MapPin className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                      No hay visitas registradas en el período seleccionado.
                     </td>
-                    <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{v.employees?.full_name || 'N/A'}</td>
-                    <td className="px-4 py-3">
-                      <div className="font-bold text-gray-900">{v.clients?.name || 'N/A'}</div>
-                      {(v.clients?.code || v.clients?.legacy_id) && (
-                        <div className="text-xs text-gray-400">Cod: {v.clients.code || v.clients.legacy_id}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${oi.badge}`}>{oi.label}</span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                      {v.end_time ? formatDate(v.end_time) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
-                      {v.duration_seconds != null ? formatDuration(v.duration_seconds) : 'N/A'}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
-                      {v.gps_accuracy_meters != null ? `${Number(v.gps_accuracy_meters).toFixed(1)} m` : 'N/A'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 italic max-w-[220px] truncate">{v.notes || '—'}</td>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                )}
+                {filteredVisits.map(v => {
+                  const oi = outcomeInfo(v.outcome)
+                  return (
+                    <tr key={v.id} className="hover:bg-green-50/40 transition-colors">
+                      <td className="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">{v.clients?.name || 'N/A'}</td>
+                      <td className="px-4 py-3 text-gray-500">{v.clients?.code || v.clients?.legacy_id || '—'}</td>
+                      <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{v.employees?.full_name || 'N/A'}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(v.start_time)}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(v.end_time)}</td>
+                      <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                        {v.duration_seconds != null ? formatDuration(v.duration_seconds) : 'N/A'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${oi.badge}`}>{oi.label}</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 italic max-w-[220px] truncate">{v.notes || '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="p-3 border-t border-green-100 bg-green-50/40 text-xs text-center text-gray-500 font-medium">
+            Mostrando {filteredVisits.length} de {visits.length} visitas en el período
+          </div>
         </div>
-        <div className="p-3 border-t border-green-100 bg-green-50/40 text-xs text-center text-gray-500 font-medium">
-          Mostrando {filteredVisits.length} de {visits.length} tiendas atendidas en el período
-        </div>
-      </div>
+      )}
     </div>
   )
 }

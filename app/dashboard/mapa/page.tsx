@@ -527,14 +527,7 @@ export default function EmployeesMapPage() {
 
         {/* ── MAPA / REPORTES ── */}
         {view === 'reportes' ? (
-          <VisitasReporte
-            visits={visits}
-            employees={employees}
-            filterFrom={filterDateFrom}
-            filterTo={filterDateTo}
-            filterEmployee={filterEmployee}
-            loading={loadingMap}
-          />
+          <VisitasReporte />
         ) : (
         <div className="bg-white rounded-3xl shadow-2xl border-2 border-green-100 overflow-hidden">
           <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-5 py-3 border-b-2 border-green-200 flex items-center justify-between">
