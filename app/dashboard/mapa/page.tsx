@@ -435,7 +435,8 @@ export default function EmployeesMapPage() {
           </div>
         )}
 
-        {/* ── FILTROS ── */}
+        {/* ── FILTROS (solo en vista Mapa) ── */}
+        {view === 'mapa' && (
         <div className="bg-white p-4 rounded-3xl shadow-lg border-2 border-green-100">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
             {/* Preventista */}
@@ -518,6 +519,7 @@ export default function EmployeesMapPage() {
             )}
           </div>
         </div>
+        )}
 
         {error && (
           <div className="bg-red-50 border-2 border-red-300 text-red-700 p-3 rounded-2xl flex items-center gap-2 text-sm">
